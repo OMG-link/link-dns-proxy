@@ -5,5 +5,9 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0"
+futures = "0.3"
+rand = "0.9.1"
 tokio = { version = "1", features = ["net", "rt", "macros"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
 trust-dns-proto = "0.23.2"
