@@ -1,7 +1,7 @@
 use anyhow::{Error, Result};
 use rand::Rng;
 use reqwest::{Client, Proxy};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::time::timeout;
 use tokio_native_tls::{TlsConnector, native_tls};
@@ -104,89 +104,35 @@ impl DnsServer {
         )))
     }
 
-    pub async fn query_tcp(&self, domain: &str, record_type: RecordType) -> Result<Message> {
+    pub async fn query_tcp(&self, domain: &str, rt: RecordType) -> Result<Message> {
         match (self.config.encrypt_type(), self.config.proxy_type()) {
-            (EncryptType::NONE, ProxyType::NONE) => {
-                self.query_plain_no_proxy(domain, record_type).await
-            }
-            (EncryptType::NONE, ProxyType::HTTP) => {
-                self.query_plain_http_proxy(domain, record_type).await
-            }
-            (EncryptType::NONE, ProxyType::SOCKS5) => {
-                self.query_plain_socks5_proxy(domain, record_type).await
-            }
+            (EncryptType::NONE, ProxyType::NONE) => self.query_plain_direct(domain, rt).await,
+            (EncryptType::NONE, ProxyType::HTTP) => self.query_plain_http(domain, rt).await,
+            (EncryptType::NONE, ProxyType::SOCKS5) => self.query_plain_socks5(domain, rt).await,
 
-            (EncryptType::TLS, ProxyType::NONE) => {
-                self.query_dot_no_proxy(domain, record_type).await
-            }
-            (EncryptType::TLS, ProxyType::HTTP) => {
-                self.query_dot_http_proxy(domain, record_type).await
-            }
-            (EncryptType::TLS, ProxyType::SOCKS5) => {
-                self.query_dot_socks5_proxy(domain, record_type).await
-            }
+            (EncryptType::TLS, ProxyType::NONE) => self.query_dot_direct(domain, rt).await,
+            (EncryptType::TLS, ProxyType::HTTP) => self.query_dot_http(domain, rt).await,
+            (EncryptType::TLS, ProxyType::SOCKS5) => self.query_dot_socks5(domain, rt).await,
 
-            (EncryptType::HTTPS, ProxyType::NONE) => {
-                self.query_doh_no_proxy(domain, record_type).await
-            }
-            (EncryptType::HTTPS, ProxyType::HTTP) => {
-                self.query_doh_http_proxy(domain, record_type).await
-            }
-            (EncryptType::HTTPS, ProxyType::SOCKS5) => {
-                self.query_doh_socks5_proxy(domain, record_type).await
-            }
+            (EncryptType::HTTPS, ProxyType::NONE) => self.query_doh_direct(domain, rt).await,
+            (EncryptType::HTTPS, ProxyType::HTTP) => self.query_doh_http(domain, rt).await,
+            (EncryptType::HTTPS, ProxyType::SOCKS5) => self.query_doh_socks5(domain, rt).await,
         }
     }
 
     // ---------------- Plain DNS (No encryption) ----------------
 
-    async fn query_plain_no_proxy(&self, domain: &str, record_type: RecordType) -> Result<Message> {
+    async fn query_plain_direct(&self, domain: &str, record_type: RecordType) -> Result<Message> {
         let tcp = TcpStream::connect(self.config.addr()).await?;
         self.send_dns_over_tcp(tcp, domain, record_type).await
     }
 
-    async fn query_plain_http_proxy(
-        &self,
-        domain: &str,
-        record_type: RecordType,
-    ) -> Result<Message> {
-        let proxy_addr = self.config.proxy_addr();
-
-        let mut stream = TcpStream::connect(proxy_addr).await?;
-        let target = self.config.addr();
-        let connect_req = format!(
-            "CONNECT {ip}:{port} HTTP/1.1\r\nHost: {ip}:{port}\r\n\r\n",
-            ip = target.ip(),
-            port = target.port()
-        );
-        stream.write_all(connect_req.as_bytes()).await?;
-
-        let mut buf = Vec::new();
-        loop {
-            let mut tmp = [0u8; 1024];
-            let n = stream.read(&mut tmp).await?;
-            if n == 0 {
-                return Err(Error::msg("Proxy closed connection during CONNECT"));
-            }
-            buf.extend_from_slice(&tmp[..n]);
-            if buf.windows(4).any(|w| w == b"\r\n\r\n") {
-                break;
-            }
-        }
-        let header = String::from_utf8_lossy(&buf);
-        let status_line = header.lines().next().unwrap_or("");
-        if !status_line.contains("200") {
-            return Err(Error::msg(format!("Proxy CONNECT failed: {}", status_line)));
-        }
-
-        self.send_dns_over_tcp(stream, domain, record_type).await
+    async fn query_plain_http(&self, domain: &str, record_type: RecordType) -> Result<Message> {
+        let tunnel = self.get_http_proxy_connection(self.config.addr()).await?;
+        self.send_dns_over_tcp(tunnel, domain, record_type).await
     }
 
-    async fn query_plain_socks5_proxy(
-        &self,
-        domain: &str,
-        record_type: RecordType,
-    ) -> Result<Message> {
+    async fn query_plain_socks5(&self, domain: &str, record_type: RecordType) -> Result<Message> {
         let proxy_addr = self.config.proxy_addr();
         let tcp = Socks5Stream::connect(proxy_addr, self.config.addr())
             .await?
@@ -196,29 +142,64 @@ impl DnsServer {
 
     // ---------------- DNS-over-TLS (DoT) ----------------
 
-    async fn query_dot_no_proxy(&self, domain: &str, record_type: RecordType) -> Result<Message> {
+    async fn query_dot_direct(&self, domain: &str, record_type: RecordType) -> Result<Message> {
         let tcp = TcpStream::connect(self.config.addr()).await?;
-        self.send_dns_over_tls(tcp, domain, record_type).await
+        let tls = self.do_tls_handshake(tcp).await?;
+        self.send_dns_over_tcp(tls, domain, record_type).await
     }
 
-    async fn query_dot_http_proxy(&self, domain: &str, record_type: RecordType) -> Result<Message> {
-        let proxy_addr = self.config.proxy_addr();
+    async fn query_dot_http(&self, domain: &str, record_type: RecordType) -> Result<Message> {
+        let tunnel = self.get_http_proxy_connection(self.config.addr()).await?;
+        let tls = self.do_tls_handshake(tunnel).await?;
+        self.send_dns_over_tcp(tls, domain, record_type).await
+    }
 
+    async fn query_dot_socks5(&self, domain: &str, record_type: RecordType) -> Result<Message> {
+        let proxy = self.config.proxy_addr();
+        let tcp = Socks5Stream::connect(proxy, self.config.addr())
+            .await?
+            .into_inner();
+        let tls = self.do_tls_handshake(tcp).await?;
+        self.send_dns_over_tcp(tls, domain, record_type).await
+    }
+
+    // ---------------- DNS-over-HTTPS (DoH) ----------------
+
+    async fn query_doh_direct(&self, domain: &str, record_type: RecordType) -> Result<Message> {
+        self.send_dns_over_https(domain, record_type, None).await
+    }
+
+    async fn query_doh_http(&self, domain: &str, record_type: RecordType) -> Result<Message> {
+        let proxy_url = format!("http://{}", self.config.proxy_addr());
+        self.send_dns_over_https(domain, record_type, Some(proxy_url))
+            .await
+    }
+
+    async fn query_doh_socks5(&self, domain: &str, record_type: RecordType) -> Result<Message> {
+        let proxy_url = format!("socks5h://{}", self.config.proxy_addr());
+        self.send_dns_over_https(domain, record_type, Some(proxy_url))
+            .await
+    }
+
+    // ---------------- Helpers ----------------
+
+    async fn get_http_proxy_connection(&self, target: std::net::SocketAddr) -> Result<TcpStream> {
+        let proxy_addr = self.config.proxy_addr();
         let mut stream = TcpStream::connect(proxy_addr).await?;
-        let target = self.config.addr();
-        let connect_req = format!(
+        let req = format!(
             "CONNECT {ip}:{port} HTTP/1.1\r\nHost: {ip}:{port}\r\n\r\n",
             ip = target.ip(),
             port = target.port()
         );
-        stream.write_all(connect_req.as_bytes()).await?;
+        stream.write_all(req.as_bytes()).await?;
 
+        // Await header end
         let mut buf = Vec::new();
         loop {
             let mut tmp = [0u8; 1024];
             let n = stream.read(&mut tmp).await?;
             if n == 0 {
-                return Err(Error::msg("Proxy closed connection during CONNECT"));
+                return Err(Error::msg("Proxy closed connection"));
             }
             buf.extend_from_slice(&tmp[..n]);
             if buf.windows(4).any(|w| w == b"\r\n\r\n") {
@@ -226,57 +207,24 @@ impl DnsServer {
             }
         }
         let header = String::from_utf8_lossy(&buf);
-        let status_line = header.lines().next().unwrap_or("");
-        if !status_line.contains("200") {
-            return Err(Error::msg(format!("Proxy CONNECT failed: {}", status_line)));
+        let status = header.lines().next().unwrap_or("");
+        if !status.contains("200") {
+            return Err(Error::msg(format!("HTTP CONNECT failed: {}", status)));
         }
+        Ok(stream)
+    }
 
+    async fn do_tls_handshake<S>(&self, stream: S) -> Result<tokio_native_tls::TlsStream<S>>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
         let hostname = self.config.hostname();
         let native = native_tls::TlsConnector::builder()
             .danger_accept_invalid_certs(!self.config.verify_cert())
             .build()?;
-        let tls_connector = TlsConnector::from(native);
-        let tls_stream = tls_connector.connect(&hostname, stream).await?;
-
-        self.send_dns_over_tcp(tls_stream, domain, record_type)
-            .await
+        let connector = TlsConnector::from(native);
+        Ok(connector.connect(&hostname, stream).await?)
     }
-
-    async fn query_dot_socks5_proxy(
-        &self,
-        domain: &str,
-        record_type: RecordType,
-    ) -> Result<Message> {
-        let proxy_addr = self.config.proxy_addr();
-        let tcp = Socks5Stream::connect(proxy_addr, self.config.addr())
-            .await?
-            .into_inner();
-        self.send_dns_over_tls(tcp, domain, record_type).await
-    }
-
-    // ---------------- DNS-over-HTTPS (DoH) ----------------
-
-    async fn query_doh_no_proxy(&self, domain: &str, record_type: RecordType) -> Result<Message> {
-        self.send_dns_over_https(domain, record_type, None).await
-    }
-
-    async fn query_doh_http_proxy(&self, domain: &str, record_type: RecordType) -> Result<Message> {
-        let proxy_url = format!("http://{}", self.config.proxy_addr());
-        self.send_dns_over_https(domain, record_type, Some(proxy_url))
-            .await
-    }
-
-    async fn query_doh_socks5_proxy(
-        &self,
-        domain: &str,
-        record_type: RecordType,
-    ) -> Result<Message> {
-        let proxy_url = format!("socks5h://{}", self.config.proxy_addr());
-        self.send_dns_over_https(domain, record_type, Some(proxy_url))
-            .await
-    }
-
-    // ---------------- Helpers ----------------
 
     async fn send_dns_over_tcp<S>(
         &self,
@@ -302,27 +250,6 @@ impl DnsServer {
         stream.read_exact(&mut resp_msg_bytes).await?;
 
         Ok(Message::from_vec(&resp_msg_bytes)?)
-    }
-
-    async fn send_dns_over_tls<S>(
-        &self,
-        stream: S,
-        domain: &str,
-        record_type: RecordType,
-    ) -> Result<Message>
-    where
-        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
-    {
-        let hostname = self.config.hostname();
-
-        let tls_connector = native_tls::TlsConnector::builder()
-            .danger_accept_invalid_certs(!self.config.verify_cert())
-            .build()?;
-        let tls_connector = TlsConnector::from(tls_connector);
-
-        let tls_stream = tls_connector.connect(hostname, stream).await?;
-        self.send_dns_over_tcp(tls_stream, domain, record_type)
-            .await
     }
 
     async fn send_dns_over_https(
