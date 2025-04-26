@@ -4,7 +4,7 @@ use anyhow::Result;
 use futures::future;
 use futures::stream::{FuturesUnordered, StreamExt};
 use tokio::net::UdpSocket;
-use tracing::{error, info, warn};
+use tracing::{error, info, trace, warn};
 use trust_dns_proto::op::Message;
 
 use super::Config;
@@ -24,7 +24,7 @@ impl DnsProxy {
             udp_listeners.push(Arc::new(socket));
         }
 
-        let upstream_server = Arc::new(DnsServer::new(config.upstream_server_addr).await);
+        let upstream_server = Arc::new(DnsServer::new(config.dns_server_configs[0].clone()).await);
 
         Ok(DnsProxy {
             udp_listeners,
@@ -104,7 +104,7 @@ async fn handle_dns_request(
         let domain = question.name().to_utf8();
         let qtype = question.query_type();
         let dns_server = dns_server.clone();
-        info!("Received request [{} {:?}]", domain, qtype);
+        trace!("Received request [{} {:?}]", domain, qtype);
         query_futs.push(async move {
             (
                 domain.clone(),
@@ -120,7 +120,7 @@ async fn handle_dns_request(
             Ok(mut response_msg) => {
                 response_msg.set_id(id);
                 let response_bytes = response_msg.to_vec()?;
-                info!("Replying request [{} {:?}]", domain, qtype);
+                trace!("Replying request [{} {:?}]", domain, qtype);
                 tokio::spawn(async move {
                     if let Err(e) = server_addr.send_to(&response_bytes, user_addr).await {
                         warn!("Unable to reply: {}", e);
