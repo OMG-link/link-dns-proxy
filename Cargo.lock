@@ -976,6 +976,7 @@ dependencies = [
  "system-configuration",
  "tokio",
  "tokio-native-tls",
+ "tokio-socks",
  "tower",
  "tower-service",
  "url",

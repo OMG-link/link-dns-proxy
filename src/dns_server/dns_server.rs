@@ -176,7 +176,7 @@ impl DnsServer {
     }
 
     async fn query_doh_socks5(&self, domain: &str, record_type: RecordType) -> Result<Message> {
-        let proxy_url = format!("socks5h://{}", self.config.proxy_addr());
+        let proxy_url = format!("socks5://{}", self.config.proxy_addr());
         self.send_dns_over_https(domain, record_type, Some(proxy_url))
             .await
     }
@@ -269,6 +269,10 @@ impl DnsServer {
         let doh_url = self.config.doh_template();
         let req_msg = self.build_query(domain, record_type)?;
         let req_msg_bytes = req_msg.to_vec()?;
+
+        // TODO: 将模板中的域名替换为addr指定的IP+域名
+        // 具体的，需要手动拼接一个模板，加上端口，然后将hostname写到hosts里。
+        // 之后，template字段就可以不要了。
 
         let resp = client
             .post(doh_url)
