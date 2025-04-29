@@ -178,12 +178,12 @@ impl Config {
         self.addr
     }
 
-    pub fn encrypt_type(&self) -> &EncryptType {
-        &self.encrypt_type
+    pub fn encrypt_type(&self) -> EncryptType {
+        self.encrypt_type.clone()
     }
 
-    pub fn proxy_type(&self) -> &ProxyType {
-        &self.proxy_type
+    pub fn proxy_type(&self) -> ProxyType {
+        self.proxy_type.clone()
     }
 
     pub fn timeout(&self) -> Duration {
@@ -230,17 +230,17 @@ impl Config {
 
     pub fn set_encrypt_none(&mut self) {
         self.encrypt_type = EncryptType::NONE;
-        self.hostname = None;
+        self.set_hostname(None);
     }
 
     pub fn set_encrypt_tls(&mut self, hostname: String) {
         self.encrypt_type = EncryptType::TLS;
-        self.hostname = Some(hostname);
+        self.set_hostname(Some(hostname));
     }
 
     pub fn set_encrypt_https(&mut self, hostname: String, doh_template: String) {
         self.encrypt_type = EncryptType::HTTPS;
-        self.hostname = Some(hostname);
+        self.set_hostname(Some(hostname));
         self.doh_template = Some(doh_template);
     }
 
@@ -257,5 +257,18 @@ impl Config {
     pub fn set_proxy_socks5(&mut self, proxy_addr: SocketAddr) {
         self.proxy_type = ProxyType::SOCKS5;
         self.proxy_addr = Some(proxy_addr);
+    }
+
+    fn set_hostname(&mut self, hostname: Option<String>) {
+        self.hostname = match hostname {
+            Some(v) => {
+                let mut v = v.clone();
+                while v.ends_with(".") {
+                    v.pop();
+                }
+                Some(v)
+            }
+            None => None,
+        };
     }
 }
