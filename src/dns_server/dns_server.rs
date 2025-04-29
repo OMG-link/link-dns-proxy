@@ -7,10 +7,11 @@ use tokio::time::timeout;
 use tokio_native_tls::{TlsConnector, native_tls};
 use tokio_socks::tcp::Socks5Stream;
 use tracing::{info, trace, warn};
-use trust_dns_proto::op::{Message, MessageType, OpCode, Query};
-use trust_dns_proto::rr::{DNSClass, Name, RecordType};
+use trust_dns_proto::op::{Message, Query};
+use trust_dns_proto::rr::{DNSClass, Name};
 
-use crate::dns_server::{Config, EncryptType, ProxyType};
+use super::{Config, EncryptType, ProxyType};
+use crate::dns_query::DnsQuery;
 
 pub struct DnsServer {
     config: Config,
@@ -21,29 +22,16 @@ impl DnsServer {
         DnsServer { config }
     }
 
-    pub async fn query(&self, domain: &str, record_type: RecordType) -> Result<Message> {
+    pub async fn query(&self, dns_query: &DnsQuery) -> Result<Message> {
         if self.config.is_udp_available() {
-            return self.query_udp(domain, record_type).await;
+            return self.query_udp(dns_query).await;
         } else {
-            return self.query_tcp(domain, record_type).await;
+            return self.query_tcp(dns_query).await;
         }
     }
 
-    async fn query_udp(&self, domain: &str, record_type: RecordType) -> Result<Message> {
-        let name = Name::from_utf8(domain)?;
-
-        let mut query_message = Message::new();
-        query_message
-            .set_message_type(MessageType::Query)
-            .set_op_code(OpCode::Query)
-            .set_recursion_desired(true)
-            .add_query({
-                let mut query = trust_dns_proto::op::Query::new();
-                query.set_name(name.clone());
-                query.set_query_class(DNSClass::IN);
-                query.set_query_type(record_type);
-                query
-            });
+    async fn query_udp(&self, dns_query: &DnsQuery) -> Result<Message> {
+        let mut query_message = self.build_query(dns_query)?;
 
         let mut rbuf = [0u8; 512];
 
@@ -66,7 +54,7 @@ impl DnsServer {
                             trace!(
                                 "Upstream server send a truncated response. We will try again with TCP now."
                             );
-                            return self.query_tcp(domain, record_type).await;
+                            return self.query_tcp(dns_query).await;
                         }
                         if resp.id() == query_id {
                             return Ok(resp);
@@ -78,7 +66,7 @@ impl DnsServer {
                             self.config.addr(),
                             attempt + 1,
                             self.config.retry_count(),
-                            domain,
+                            dns_query.domain,
                             e
                         );
                         continue;
@@ -90,7 +78,7 @@ impl DnsServer {
                         self.config.addr(),
                         attempt + 1,
                         self.config.retry_count(),
-                        domain
+                        dns_query.domain
                     );
                     continue;
                 }
@@ -100,85 +88,83 @@ impl DnsServer {
         Err(Error::msg(format!(
             "All {} attempts to query domain '{}' failed",
             self.config.retry_count(),
-            domain
+            dns_query.domain
         )))
     }
 
-    pub async fn query_tcp(&self, domain: &str, rt: RecordType) -> Result<Message> {
+    pub async fn query_tcp(&self, dns_query: &DnsQuery) -> Result<Message> {
         match (self.config.encrypt_type(), self.config.proxy_type()) {
-            (EncryptType::NONE, ProxyType::NONE) => self.query_plain_direct(domain, rt).await,
-            (EncryptType::NONE, ProxyType::HTTP) => self.query_plain_http(domain, rt).await,
-            (EncryptType::NONE, ProxyType::SOCKS5) => self.query_plain_socks5(domain, rt).await,
+            (EncryptType::NONE, ProxyType::NONE) => self.query_plain_direct(dns_query).await,
+            (EncryptType::NONE, ProxyType::HTTP) => self.query_plain_http(dns_query).await,
+            (EncryptType::NONE, ProxyType::SOCKS5) => self.query_plain_socks5(dns_query).await,
 
-            (EncryptType::TLS, ProxyType::NONE) => self.query_dot_direct(domain, rt).await,
-            (EncryptType::TLS, ProxyType::HTTP) => self.query_dot_http(domain, rt).await,
-            (EncryptType::TLS, ProxyType::SOCKS5) => self.query_dot_socks5(domain, rt).await,
+            (EncryptType::TLS, ProxyType::NONE) => self.query_dot_direct(dns_query).await,
+            (EncryptType::TLS, ProxyType::HTTP) => self.query_dot_http(dns_query).await,
+            (EncryptType::TLS, ProxyType::SOCKS5) => self.query_dot_socks5(dns_query).await,
 
-            (EncryptType::HTTPS, ProxyType::NONE) => self.query_doh_direct(domain, rt).await,
-            (EncryptType::HTTPS, ProxyType::HTTP) => self.query_doh_http(domain, rt).await,
-            (EncryptType::HTTPS, ProxyType::SOCKS5) => self.query_doh_socks5(domain, rt).await,
+            (EncryptType::HTTPS, ProxyType::NONE) => self.query_doh_direct(dns_query).await,
+            (EncryptType::HTTPS, ProxyType::HTTP) => self.query_doh_http(dns_query).await,
+            (EncryptType::HTTPS, ProxyType::SOCKS5) => self.query_doh_socks5(dns_query).await,
         }
     }
 
     // ---------------- Plain DNS (No encryption) ----------------
 
-    async fn query_plain_direct(&self, domain: &str, record_type: RecordType) -> Result<Message> {
+    async fn query_plain_direct(&self, dns_query: &DnsQuery) -> Result<Message> {
         let tcp = TcpStream::connect(self.config.addr()).await?;
-        self.send_dns_over_tcp(tcp, domain, record_type).await
+        self.send_dns_over_tcp(tcp, dns_query).await
     }
 
-    async fn query_plain_http(&self, domain: &str, record_type: RecordType) -> Result<Message> {
+    async fn query_plain_http(&self, dns_query: &DnsQuery) -> Result<Message> {
         let tunnel = self.get_http_proxy_connection(self.config.addr()).await?;
-        self.send_dns_over_tcp(tunnel, domain, record_type).await
+        self.send_dns_over_tcp(tunnel, dns_query).await
     }
 
-    async fn query_plain_socks5(&self, domain: &str, record_type: RecordType) -> Result<Message> {
+    async fn query_plain_socks5(&self, dns_query: &DnsQuery) -> Result<Message> {
         let proxy_addr = self.config.proxy_addr();
         let tcp = Socks5Stream::connect(proxy_addr, self.config.addr())
             .await?
             .into_inner();
-        self.send_dns_over_tcp(tcp, domain, record_type).await
+        self.send_dns_over_tcp(tcp, dns_query).await
     }
 
     // ---------------- DNS-over-TLS (DoT) ----------------
 
-    async fn query_dot_direct(&self, domain: &str, record_type: RecordType) -> Result<Message> {
+    async fn query_dot_direct(&self, dns_query: &DnsQuery) -> Result<Message> {
         let tcp = TcpStream::connect(self.config.addr()).await?;
         let tls = self.do_tls_handshake(tcp).await?;
-        self.send_dns_over_tcp(tls, domain, record_type).await
+        self.send_dns_over_tcp(tls, dns_query).await
     }
 
-    async fn query_dot_http(&self, domain: &str, record_type: RecordType) -> Result<Message> {
+    async fn query_dot_http(&self, dns_query: &DnsQuery) -> Result<Message> {
         let tunnel = self.get_http_proxy_connection(self.config.addr()).await?;
         let tls = self.do_tls_handshake(tunnel).await?;
-        self.send_dns_over_tcp(tls, domain, record_type).await
+        self.send_dns_over_tcp(tls, dns_query).await
     }
 
-    async fn query_dot_socks5(&self, domain: &str, record_type: RecordType) -> Result<Message> {
+    async fn query_dot_socks5(&self, dns_query: &DnsQuery) -> Result<Message> {
         let proxy = self.config.proxy_addr();
         let tcp = Socks5Stream::connect(proxy, self.config.addr())
             .await?
             .into_inner();
         let tls = self.do_tls_handshake(tcp).await?;
-        self.send_dns_over_tcp(tls, domain, record_type).await
+        self.send_dns_over_tcp(tls, dns_query).await
     }
 
     // ---------------- DNS-over-HTTPS (DoH) ----------------
 
-    async fn query_doh_direct(&self, domain: &str, record_type: RecordType) -> Result<Message> {
-        self.send_dns_over_https(domain, record_type, None).await
+    async fn query_doh_direct(&self, dns_query: &DnsQuery) -> Result<Message> {
+        self.send_dns_over_https(dns_query, None).await
     }
 
-    async fn query_doh_http(&self, domain: &str, record_type: RecordType) -> Result<Message> {
+    async fn query_doh_http(&self, dns_query: &DnsQuery) -> Result<Message> {
         let proxy_url = format!("http://{}", self.config.proxy_addr());
-        self.send_dns_over_https(domain, record_type, Some(proxy_url))
-            .await
+        self.send_dns_over_https(dns_query, Some(proxy_url)).await
     }
 
-    async fn query_doh_socks5(&self, domain: &str, record_type: RecordType) -> Result<Message> {
+    async fn query_doh_socks5(&self, dns_query: &DnsQuery) -> Result<Message> {
         let proxy_url = format!("socks5://{}", self.config.proxy_addr());
-        self.send_dns_over_https(domain, record_type, Some(proxy_url))
-            .await
+        self.send_dns_over_https(dns_query, Some(proxy_url)).await
     }
 
     // ---------------- Helpers ----------------
@@ -226,16 +212,11 @@ impl DnsServer {
         Ok(connector.connect(&hostname, stream).await?)
     }
 
-    async fn send_dns_over_tcp<S>(
-        &self,
-        mut stream: S,
-        domain: &str,
-        record_type: RecordType,
-    ) -> Result<Message>
+    async fn send_dns_over_tcp<S>(&self, mut stream: S, dns_query: &DnsQuery) -> Result<Message>
     where
         S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
     {
-        let req_msg = self.build_query(domain, record_type)?;
+        let req_msg = self.build_query(dns_query)?;
         let req_msg_bytes = req_msg.to_vec()?;
 
         let req_len_bytes = (req_msg_bytes.len() as u16).to_be_bytes();
@@ -254,12 +235,12 @@ impl DnsServer {
 
     async fn send_dns_over_https(
         &self,
-        domain: &str,
-        record_type: RecordType,
+        dns_query: &DnsQuery,
         proxy: Option<String>,
     ) -> Result<Message> {
         let client = {
-            let mut builder = Client::builder();
+            let mut builder =
+                Client::builder().resolve(&self.config.hostname(), self.config.addr());
             if let Some(proxy_url) = proxy {
                 builder = builder.proxy(Proxy::all(&proxy_url)?);
             }
@@ -267,7 +248,7 @@ impl DnsServer {
         };
 
         let doh_url = self.config.doh_template();
-        let req_msg = self.build_query(domain, record_type)?;
+        let req_msg = self.build_query(dns_query)?;
         let req_msg_bytes = req_msg.to_vec()?;
 
         // TODO: 将模板中的域名替换为addr指定的IP+域名
@@ -285,8 +266,8 @@ impl DnsServer {
         Ok(Message::from_vec(&resp_msg_bytes)?)
     }
 
-    fn build_query(&self, domain: &str, record_type: RecordType) -> Result<Message> {
-        let name = Name::from_utf8(domain)?;
+    fn build_query(&self, dns_query: &DnsQuery) -> Result<Message> {
+        let name = Name::from_utf8(&dns_query.domain)?;
         let mut message = Message::new();
         message.set_id(rand::random());
         message.set_message_type(trust_dns_proto::op::MessageType::Query);
@@ -296,7 +277,7 @@ impl DnsServer {
             let mut q = Query::new();
             q.set_name(name);
             q.set_query_class(DNSClass::IN);
-            q.set_query_type(record_type);
+            q.set_query_type(dns_query.qtype);
             q
         });
         Ok(message)

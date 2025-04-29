@@ -1,15 +1,23 @@
+mod config;
 mod dns_proxy;
+mod dns_query;
 mod dns_server;
+
+use std::sync::Arc;
 
 use anyhow::Result;
 use tracing::error;
 
+use config::Config;
 use dns_proxy::DnsProxy;
 
 async fn run() -> Result<()> {
-    let dns_proxy_config = dns_proxy::Config::from_file("config/test.cfg")?;
-    let dns_proxy = DnsProxy::new(dns_proxy_config).await.unwrap();
-    dns_proxy.listen_and_serve().await?;
+    let Config {
+        listen_addrs,
+        dns_server_configs,
+    } = Config::from_file("config/test.cfg")?;
+    let dns_proxy = Arc::new(DnsProxy::new(dns_server_configs).await.unwrap());
+    dns_proxy.listen_and_serve(listen_addrs).await?;
     Ok(())
 }
 

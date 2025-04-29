@@ -64,7 +64,7 @@ impl Config {
             dns_server_configs.push(cfg);
         }
 
-        crate::dns_proxy::Config::new(listen_addrs, dns_server_configs)
+        Ok(Self::new(listen_addrs, dns_server_configs)?)
     }
 }
 
