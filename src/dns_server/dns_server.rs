@@ -251,10 +251,6 @@ impl DnsServer {
         let req_msg = self.build_query(dns_query)?;
         let req_msg_bytes = req_msg.to_vec()?;
 
-        // TODO: 将模板中的域名替换为addr指定的IP+域名
-        // 具体的，需要手动拼接一个模板，加上端口，然后将hostname写到hosts里。
-        // 之后，template字段就可以不要了。
-
         let resp = client
             .post(doh_url)
             .header("Content-Type", "application/dns-message")
