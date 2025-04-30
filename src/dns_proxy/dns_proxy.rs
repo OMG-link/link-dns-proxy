@@ -46,19 +46,22 @@ impl PendingQuery {
 }
 
 pub struct DnsProxy {
-    upstream_server: Arc<DnsServer>,
+    upstream_servers: Vec<DnsServer>,
     dns_cache: Arc<Mutex<DnsCache>>,
     pending_querys: Arc<Mutex<HashMap<DnsQuery, PendingQuery>>>,
 }
 
 impl DnsProxy {
     pub async fn new(dns_server_configs: Vec<crate::dns_server::Config>) -> Result<Self> {
-        let upstream_server = Arc::new(DnsServer::new(dns_server_configs[0].clone()).await);
+        let upstream_servers = dns_server_configs
+            .into_iter()
+            .map(|config| DnsServer::new(config))
+            .collect::<Result<Vec<_>, _>>()?;
         let dns_cache = Arc::new(Mutex::new(HashMap::new()));
         let pending_querys = Arc::new(Mutex::new(HashMap::new()));
 
         Ok(DnsProxy {
-            upstream_server,
+            upstream_servers,
             dns_cache,
             pending_querys,
         })
@@ -109,7 +112,7 @@ impl DnsProxy {
             let request_id = request_msg.id();
             let mut query_futs = FuturesUnordered::new();
             for question in request_msg.queries() {
-                let domain = question.name().to_utf8();
+                let domain = question.name().clone();
                 let qtype = question.query_type();
                 trace!("Received request [{} {:?}]", domain, qtype);
 
@@ -201,7 +204,7 @@ impl DnsProxy {
 
                 let self_cloned = self.clone();
                 tokio::spawn(async move {
-                    let lookup_result = self_cloned.upstream_server.query(&query).await;
+                    let lookup_result = self_cloned.upstream_servers[0].query(&query).await;
                     match lookup_result {
                         Ok(msg_upstream) => {
                             let msg_cache: Message;

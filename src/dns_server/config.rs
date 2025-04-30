@@ -1,6 +1,8 @@
 use anyhow::{Error, Result};
+use reqwest::dns::Name;
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::str::FromStr;
 use std::time::Duration;
 use tracing::error;
 
@@ -18,7 +20,6 @@ pub enum ProxyType {
     HTTP,
 }
 
-#[derive(Clone)]
 pub struct Config {
     addr: SocketAddr,
     encrypt_type: EncryptType,
@@ -28,7 +29,7 @@ pub struct Config {
 
     proxy_addr: Option<SocketAddr>,
 
-    hostname: Option<String>,
+    hostname: Option<Name>,
     doh_template: Option<String>,
     verify_cert: bool,
 }
@@ -99,11 +100,13 @@ impl Config {
             match enc.as_str() {
                 "NONE" => cfg.set_encrypt_none(),
                 "TLS" => {
-                    let hn = get_or_error("hostname")?;
+                    let hn_str = get_or_error("hostname")?;
+                    let hn = Name::from_str(&hn_str)?;
                     cfg.set_encrypt_tls(hn)
                 }
                 "HTTPS" => {
-                    let hn = get_or_error("hostname")?;
+                    let hn_str = get_or_error("hostname")?;
+                    let hn = Name::from_str(&hn_str)?;
                     let doh_tpl = get_or_error("doh-template")?;
                     cfg.set_encrypt_https(hn, doh_tpl);
                 }
@@ -194,7 +197,7 @@ impl Config {
         self.retry_count
     }
 
-    pub fn hostname(&self) -> &String {
+    pub fn hostname(&self) -> &Name {
         self.hostname.as_ref().unwrap()
     }
 
@@ -230,17 +233,17 @@ impl Config {
 
     pub fn set_encrypt_none(&mut self) {
         self.encrypt_type = EncryptType::NONE;
-        self.set_hostname(None);
+        self.hostname = None;
     }
 
-    pub fn set_encrypt_tls(&mut self, hostname: String) {
+    pub fn set_encrypt_tls(&mut self, hostname: Name) {
         self.encrypt_type = EncryptType::TLS;
-        self.set_hostname(Some(hostname));
+        self.hostname = Some(hostname);
     }
 
-    pub fn set_encrypt_https(&mut self, hostname: String, doh_template: String) {
+    pub fn set_encrypt_https(&mut self, hostname: Name, doh_template: String) {
         self.encrypt_type = EncryptType::HTTPS;
-        self.set_hostname(Some(hostname));
+        self.hostname = Some(hostname);
         self.doh_template = Some(doh_template);
     }
 
@@ -257,18 +260,5 @@ impl Config {
     pub fn set_proxy_socks5(&mut self, proxy_addr: SocketAddr) {
         self.proxy_type = ProxyType::SOCKS5;
         self.proxy_addr = Some(proxy_addr);
-    }
-
-    fn set_hostname(&mut self, hostname: Option<String>) {
-        self.hostname = match hostname {
-            Some(v) => {
-                let mut v = v.clone();
-                while v.ends_with(".") {
-                    v.pop();
-                }
-                Some(v)
-            }
-            None => None,
-        };
     }
 }
