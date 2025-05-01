@@ -1,11 +1,11 @@
-use anyhow::{Error, Result};
+use anyhow::Result;
 use reqwest::dns::Name;
-use std::collections::HashMap;
 use std::fmt;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
-use tracing::error;
+
+use crate::ConfigMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EncryptType {
@@ -14,11 +14,37 @@ pub enum EncryptType {
     HTTPS,
 }
 
+impl FromStr for EncryptType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_uppercase().as_str() {
+            "NONE" => Ok(EncryptType::NONE),
+            "TLS" => Ok(EncryptType::TLS),
+            "HTTPS" => Ok(EncryptType::HTTPS),
+            _ => Err(format!("Invalid encrypt type: {}", s)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProxyType {
     NONE,
     SOCKS5,
     HTTP,
+}
+
+impl FromStr for ProxyType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_uppercase().as_str() {
+            "NONE" => Ok(ProxyType::NONE),
+            "SOCKS5" => Ok(ProxyType::SOCKS5),
+            "HTTP" => Ok(ProxyType::HTTP),
+            _ => Err(format!("Invalid proxy type: {}", s)),
+        }
+    }
 }
 
 pub struct Config {
@@ -54,129 +80,58 @@ impl Config {
         }
     }
 
-    pub fn from_kv_prefix(map: &HashMap<String, String>, prefix: &str) -> Result<Self> {
-        let get_or_error = |key: &str| {
-            map.get(&format!("{}{}", prefix, key))
-                .cloned()
-                .ok_or_else(|| {
-                    let msg = format!("Missing config key: {}{}", prefix, key);
-                    error!("{}", msg);
-                    Error::msg(msg)
-                })
-        };
-
-        let addr_str = get_or_error("addr")?;
-        let addr: SocketAddr = match addr_str.parse() {
-            Ok(v) => v,
-            Err(e) => {
-                let msg = format!("Invalid addr: {} {}", addr_str, e);
-                error!("{}", msg);
-                return Err(Error::msg(msg));
-            }
-        };
-
+    pub fn from_config_map(map: &mut ConfigMap, prefix: &str) -> Result<Self> {
+        let addr = map.get_required(&format!("{prefix}-addr"))?;
         let mut cfg = crate::dns_server::Config::new(addr);
 
-        if let Some(ts) = map.get(&format!("{}timeout", prefix)) {
-            let secs: u64 = match ts.parse() {
-                Ok(v) => v,
-                Err(e) => {
-                    let msg = format!("Invalid timeout(ms): {} {}", ts, e);
-                    error!("{}", msg);
-                    return Err(Error::msg(msg));
+        if let Some(encrypt_type) = map.get_optional(&format!("{prefix}-encrypt-type"))? {
+            match encrypt_type {
+                EncryptType::NONE => {
+                    cfg.set_encrypt_none();
                 }
-            };
+                EncryptType::TLS => {
+                    let hn = map.get_required(&format!("{prefix}-hostname"))?;
+                    cfg.set_encrypt_tls(hn);
+                    if let Some(ok) = map.get_optional(&format!("{prefix}-verify-cert"))? {
+                        cfg.set_verify_cert(ok);
+                    }
+                }
+                EncryptType::HTTPS => {
+                    let hn = map.get_required(&format!("{prefix}-hostname"))?;
+                    let doh = map.get_required(&format!("{prefix}-doh-template"))?;
+                    cfg.set_encrypt_https(hn, doh);
+                    if let Some(ok) = map.get_optional(&format!("{prefix}-verify-cert"))? {
+                        cfg.set_verify_cert(ok);
+                    }
+                }
+            }
+        }
+
+        if let Some(proxy_type) = map.get_optional(&format!("{prefix}-proxy-type"))? {
+            match proxy_type {
+                ProxyType::NONE => {
+                    cfg.set_proxy_none();
+                }
+                ProxyType::HTTP => {
+                    let pa: SocketAddr = map.get_required(&format!("{prefix}-proxy-addr"))?;
+                    cfg.set_proxy_http(pa);
+                }
+                ProxyType::SOCKS5 => {
+                    let pa: SocketAddr = map.get_required(&format!("{prefix}-proxy-addr"))?;
+                    cfg.set_proxy_socks5(pa);
+                }
+            }
+        }
+
+        if let Some(secs) = map.get_optional(&format!("{prefix}-timeout"))? {
             cfg.set_timeout(Duration::from_millis(secs));
         }
 
-        if let Some(rc) = map.get(&format!("{}retry-count", prefix)) {
-            let cnt: u8 = match rc.parse() {
-                Ok(v) => v,
-                Err(e) => {
-                    let msg = format!("Invalid retry-count(ms): {} {}", rc, e);
-                    error!("{}", msg);
-                    return Err(Error::msg(msg));
-                }
-            };
+        if let Some(cnt) = map.get_optional(&format!("{prefix}-retry-count"))? {
             cfg.set_retry_count(cnt);
         }
 
-        if let Some(enc) = map.get(&format!("{}encrypt-type", prefix)) {
-            match enc.as_str() {
-                "NONE" => cfg.set_encrypt_none(),
-                "TLS" => {
-                    let hn_str = get_or_error("hostname")?;
-                    let hn = Name::from_str(&hn_str)?;
-                    cfg.set_encrypt_tls(hn)
-                }
-                "HTTPS" => {
-                    let hn_str = get_or_error("hostname")?;
-                    let hn = Name::from_str(&hn_str)?;
-                    let doh_tpl = get_or_error("doh-template")?;
-                    cfg.set_encrypt_https(hn, doh_tpl);
-                }
-                other => {
-                    let msg = format!("Invalid encrypt-type: {}", other);
-                    error!("{}", msg);
-                    return Err(Error::msg(msg));
-                }
-            }
-        }
-
-        if let Some(pt) = map.get(&format!("{}proxy-type", prefix)) {
-            match pt.as_str() {
-                "NONE" => cfg.set_proxy_none(),
-                "HTTP" => {
-                    let pa = get_or_error("proxy-addr")?;
-                    cfg.set_proxy_http(match pa.parse() {
-                        Ok(v) => v,
-                        Err(e) => {
-                            let msg = format!("Invalid proxy-addr: {} {}", pa, e);
-                            error!("{}", msg);
-                            return Err(Error::msg(msg));
-                        }
-                    });
-                }
-                "SOCKS5" => {
-                    let pa = get_or_error("proxy-addr")?;
-                    cfg.set_proxy_socks5(match pa.parse() {
-                        Ok(v) => v,
-                        Err(e) => {
-                            let msg = format!("Invalid proxy-addr: {} {}", pa, e);
-                            error!("{}", msg);
-                            return Err(Error::msg(msg));
-                        }
-                    });
-                }
-                other => {
-                    let msg = format!("Invalid proxy-type: {}", other);
-                    error!("{}", msg);
-                    return Err(Error::msg(msg));
-                }
-            }
-        }
-
-        if let Some(vc) = map.get(&format!("{}verify-cert", prefix)) {
-            let ok: bool = match vc.parse() {
-                Ok(v) => v,
-                Err(e) => {
-                    let msg = format!("Invalid verify-cert: {} {}", vc, e);
-                    error!("{}", msg);
-                    return Err(Error::msg(msg));
-                }
-            };
-            cfg.set_verify_cert(ok);
-        }
-
-        if let Some(vc) = map.get(&format!("{}reuse-tcp-connection", prefix)) {
-            let ok: bool = match vc.parse() {
-                Ok(v) => v,
-                Err(e) => {
-                    let msg = format!("Invalid reuse-tcp-connection: {} {}", vc, e);
-                    error!("{}", msg);
-                    return Err(Error::msg(msg));
-                }
-            };
+        if let Some(ok) = map.get_optional(&format!("{prefix}-reuse-tcp-connection"))? {
             cfg.set_reuse_tcp_connection(ok);
         }
 

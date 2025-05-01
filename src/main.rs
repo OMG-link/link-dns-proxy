@@ -9,6 +9,7 @@ use anyhow::Result;
 use tracing::error;
 
 use config::Config;
+use config::ConfigMap;
 use dns_proxy::DnsProxy;
 use dns_query::DnsQuery;
 
