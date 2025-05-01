@@ -60,7 +60,7 @@ pub struct Config {
     proxy_addr: Option<SocketAddr>,
     // optional info
     timeout: Duration,
-    retry_count: u8,
+    max_retry: u8,
     reuse_tcp_connection: bool,
 }
 
@@ -75,7 +75,7 @@ impl Config {
             proxy_type: ProxyType::NONE,
             proxy_addr: None,
             timeout: Duration::from_secs(2),
-            retry_count: 2,
+            max_retry: 2,
             reuse_tcp_connection: false,
         }
     }
@@ -127,8 +127,8 @@ impl Config {
             cfg.set_timeout(Duration::from_millis(secs));
         }
 
-        if let Some(cnt) = map.get_optional(&format!("{prefix}-retry-count"))? {
-            cfg.set_retry_count(cnt);
+        if let Some(cnt) = map.get_optional(&format!("{prefix}-max-retry"))? {
+            cfg.set_max_retry(cnt);
         }
 
         if let Some(ok) = map.get_optional(&format!("{prefix}-reuse-tcp-connection"))? {
@@ -166,7 +166,7 @@ impl Config {
     }
 
     pub fn retry_count(&self) -> u8 {
-        self.retry_count
+        self.max_retry
     }
 
     pub fn reuse_tcp_connection(&self) -> bool {
@@ -199,8 +199,8 @@ impl Config {
         self.timeout = timeout;
     }
 
-    pub fn set_retry_count(&mut self, retry_count: u8) {
-        self.retry_count = retry_count;
+    pub fn set_max_retry(&mut self, max_retry: u8) {
+        self.max_retry = max_retry;
     }
 
     pub fn set_reuse_tcp_connection(&mut self, reuse_tcp_connection: bool) {
