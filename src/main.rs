@@ -10,6 +10,7 @@ use tracing::error;
 
 use config::Config;
 use dns_proxy::DnsProxy;
+use dns_query::DnsQuery;
 
 async fn run() -> Result<()> {
     let Config {

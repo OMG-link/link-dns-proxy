@@ -22,7 +22,6 @@ impl DnsServer {
     }
 
     pub fn query(&self, dns_query: &DnsQuery) -> BoxFuture<'_, Result<Message>> {
-        let q = dns_query.clone();
-        self.conn.query(q).boxed()
+        self.conn.query(dns_query.clone()).boxed()
     }
 }

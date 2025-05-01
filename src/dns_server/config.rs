@@ -1,19 +1,20 @@
 use anyhow::{Error, Result};
 use reqwest::dns::Name;
 use std::collections::HashMap;
+use std::fmt;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
 use tracing::error;
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EncryptType {
     NONE,
     TLS,
     HTTPS,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProxyType {
     NONE,
     SOCKS5,
@@ -21,17 +22,20 @@ pub enum ProxyType {
 }
 
 pub struct Config {
+    // DNS server IP
     addr: SocketAddr,
+    // encrypt info
     encrypt_type: EncryptType,
-    proxy_type: ProxyType,
-    timeout: Duration,
-    retry_count: u8,
-
-    proxy_addr: Option<SocketAddr>,
-
     hostname: Option<Name>,
     doh_template: Option<String>,
     verify_cert: bool,
+    // proxy info
+    proxy_type: ProxyType,
+    proxy_addr: Option<SocketAddr>,
+    // optional info
+    timeout: Duration,
+    retry_count: u8,
+    reuse_tcp_connection: bool,
 }
 
 impl Config {
@@ -39,13 +43,14 @@ impl Config {
         Self {
             addr,
             encrypt_type: EncryptType::NONE,
-            proxy_type: ProxyType::NONE,
-            timeout: Duration::from_secs(2),
-            retry_count: 1,
-            proxy_addr: None,
             hostname: None,
             doh_template: None,
             verify_cert: true,
+            proxy_type: ProxyType::NONE,
+            proxy_addr: None,
+            timeout: Duration::from_secs(2),
+            retry_count: 2,
+            reuse_tcp_connection: false,
         }
     }
 
@@ -163,6 +168,18 @@ impl Config {
             cfg.set_verify_cert(ok);
         }
 
+        if let Some(vc) = map.get(&format!("{}reuse-tcp-connection", prefix)) {
+            let ok: bool = match vc.parse() {
+                Ok(v) => v,
+                Err(e) => {
+                    let msg = format!("Invalid reuse-tcp-connection: {} {}", vc, e);
+                    error!("{}", msg);
+                    return Err(Error::msg(msg));
+                }
+            };
+            cfg.set_reuse_tcp_connection(ok);
+        }
+
         Ok(cfg)
     }
 
@@ -197,6 +214,10 @@ impl Config {
         self.retry_count
     }
 
+    pub fn reuse_tcp_connection(&self) -> bool {
+        self.reuse_tcp_connection
+    }
+
     pub fn hostname(&self) -> &Name {
         self.hostname.as_ref().unwrap()
     }
@@ -227,6 +248,10 @@ impl Config {
         self.retry_count = retry_count;
     }
 
+    pub fn set_reuse_tcp_connection(&mut self, reuse_tcp_connection: bool) {
+        self.reuse_tcp_connection = reuse_tcp_connection;
+    }
+
     pub fn set_verify_cert(&mut self, verify_cert: bool) {
         self.verify_cert = verify_cert;
     }
@@ -234,17 +259,20 @@ impl Config {
     pub fn set_encrypt_none(&mut self) {
         self.encrypt_type = EncryptType::NONE;
         self.hostname = None;
+        self.set_reuse_tcp_connection(false);
     }
 
     pub fn set_encrypt_tls(&mut self, hostname: Name) {
         self.encrypt_type = EncryptType::TLS;
         self.hostname = Some(hostname);
+        self.set_reuse_tcp_connection(true);
     }
 
     pub fn set_encrypt_https(&mut self, hostname: Name, doh_template: String) {
         self.encrypt_type = EncryptType::HTTPS;
         self.hostname = Some(hostname);
         self.doh_template = Some(doh_template);
+        self.set_reuse_tcp_connection(true);
     }
 
     pub fn set_proxy_none(&mut self) {
@@ -260,5 +288,19 @@ impl Config {
     pub fn set_proxy_socks5(&mut self, proxy_addr: SocketAddr) {
         self.proxy_type = ProxyType::SOCKS5;
         self.proxy_addr = Some(proxy_addr);
+    }
+}
+
+impl fmt::Display for Config {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Config {{")?;
+        write!(f, "{}", self.addr)?;
+        if self.encrypt_type != EncryptType::NONE {
+            write!(f, ",{:?}", self.encrypt_type)?;
+        }
+        if self.proxy_type != ProxyType::NONE {
+            write!(f, ",{:?}", self.proxy_type)?;
+        }
+        writeln!(f, "}}")
     }
 }

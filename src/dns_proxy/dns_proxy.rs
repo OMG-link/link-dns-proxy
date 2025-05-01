@@ -123,7 +123,7 @@ impl DnsProxy {
                         domain: domain.clone(),
                         qtype,
                     };
-                    let result = self_cloned.handle_dns_request(query).await;
+                    let result = self_cloned.handle_dns_request(&query).await;
                     if let Err(e) = &result {
                         warn!("Failed to resolve [{} {:?}]: {}", domain, qtype, e);
                     }
@@ -164,10 +164,10 @@ impl DnsProxy {
         }
     }
 
-    async fn handle_dns_request(self: Arc<Self>, query: DnsQuery) -> Result<Arc<Result<Message>>> {
+    async fn handle_dns_request(self: Arc<Self>, query: &DnsQuery) -> Result<Arc<Result<Message>>> {
         {
             let cache = self.dns_cache.lock().await;
-            if let Some(entry) = cache.get(&query) {
+            if let Some(entry) = cache.get(query) {
                 if !entry.is_expired() {
                     trace!("Cache hit {:?}", query);
                     return Ok(Arc::new(Ok(entry.get_message())));
@@ -177,7 +177,7 @@ impl DnsProxy {
 
         {
             let mut pending = self.pending_querys.lock().await;
-            if let Some(pq) = pending.get_mut(&query) {
+            if let Some(pq) = pending.get_mut(query) {
                 let receiver = pq.add_waiter();
                 let time_epalsed = pq.get_time_elapsed();
                 drop(pending);
@@ -203,6 +203,7 @@ impl DnsProxy {
                 trace!("Making a new upstream query {:?}", query);
 
                 let self_cloned = self.clone();
+                let query = query.clone();
                 tokio::spawn(async move {
                     let lookup_result = self_cloned.upstream_servers[0].query(&query).await;
                     match lookup_result {
