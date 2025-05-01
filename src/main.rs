@@ -6,6 +6,7 @@ mod dns_server;
 use std::sync::Arc;
 
 use anyhow::Result;
+use clap::Parser;
 use tracing::error;
 
 use config::Config;
@@ -13,11 +14,18 @@ use config::ConfigMap;
 use dns_proxy::DnsProxy;
 use dns_query::DnsQuery;
 
-async fn run() -> Result<()> {
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    #[arg(long, default_value = "config/default.cfg")]
+    config: String,
+}
+
+async fn run(config_path: &str) -> Result<()> {
     let Config {
         listen_addrs,
         dns_server_configs,
-    } = Config::from_file("config/test.cfg")?;
+    } = Config::from_file(config_path)?;
     let dns_proxy = Arc::new(DnsProxy::new(dns_server_configs).await.unwrap());
     dns_proxy.listen_and_serve(listen_addrs).await?;
     Ok(())
@@ -29,7 +37,9 @@ async fn main() {
         .with_max_level(tracing::Level::TRACE)
         .init();
 
-    match run().await {
+    let args = Args::parse();
+
+    match run(&args.config).await {
         Ok(()) => {}
         Err(e) => {
             error!("Server crashed: {:?}", e);

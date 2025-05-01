@@ -6,9 +6,10 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0"
 async-trait = "0.1.88"
+clap = { version = "4.5.37" , features = ["derive"] }
 futures = "0.3"
 rand = "0.9.1"
-reqwest = { version = "0.12.15", features = ["socks"]}
+reqwest = { version = "0.12.15", features = ["socks"] }
 tokio = { version = "1", features = ["net", "rt", "macros"] }
 tokio-native-tls = "0.3.1"
 tokio-socks = "0.5.2"
