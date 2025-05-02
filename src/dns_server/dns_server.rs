@@ -13,7 +13,7 @@ impl DnsServer {
     pub fn new(config: Config) -> Result<Self> {
         let boxed_conn: Box<dyn Connection> = if config.is_udp_available() {
             Box::new(UdpConnection::new(config))
-        } else if config.encrypt_type() == EncryptType::HTTPS {
+        } else if config.encrypt_type() == EncryptType::Https {
             Box::new(HttpsConnection::new(config)?)
         } else {
             Box::new(TcpConnection::new(config))

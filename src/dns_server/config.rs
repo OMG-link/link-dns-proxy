@@ -9,9 +9,9 @@ use crate::ConfigMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EncryptType {
-    NONE,
-    TLS,
-    HTTPS,
+    None,
+    Tls,
+    Https,
 }
 
 impl FromStr for EncryptType {
@@ -19,9 +19,9 @@ impl FromStr for EncryptType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_ascii_uppercase().as_str() {
-            "NONE" => Ok(EncryptType::NONE),
-            "TLS" => Ok(EncryptType::TLS),
-            "HTTPS" => Ok(EncryptType::HTTPS),
+            "NONE" => Ok(EncryptType::None),
+            "TLS" => Ok(EncryptType::Tls),
+            "HTTPS" => Ok(EncryptType::Https),
             _ => Err(format!("Invalid encrypt type: {}", s)),
         }
     }
@@ -29,9 +29,9 @@ impl FromStr for EncryptType {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProxyType {
-    NONE,
-    SOCKS5,
-    HTTP,
+    None,
+    Socks5,
+    Http,
 }
 
 impl FromStr for ProxyType {
@@ -39,9 +39,9 @@ impl FromStr for ProxyType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_ascii_uppercase().as_str() {
-            "NONE" => Ok(ProxyType::NONE),
-            "SOCKS5" => Ok(ProxyType::SOCKS5),
-            "HTTP" => Ok(ProxyType::HTTP),
+            "NONE" => Ok(ProxyType::None),
+            "SOCKS5" => Ok(ProxyType::Socks5),
+            "HTTP" => Ok(ProxyType::Http),
             _ => Err(format!("Invalid proxy type: {}", s)),
         }
     }
@@ -68,11 +68,11 @@ impl Config {
     pub fn new(addr: SocketAddr) -> Self {
         Self {
             addr,
-            encrypt_type: EncryptType::NONE,
+            encrypt_type: EncryptType::None,
             hostname: None,
             doh_template: None,
             verify_cert: true,
-            proxy_type: ProxyType::NONE,
+            proxy_type: ProxyType::None,
             proxy_addr: None,
             timeout: Duration::from_secs(2),
             max_retry: 2,
@@ -86,17 +86,17 @@ impl Config {
 
         if let Some(encrypt_type) = map.get_optional(&format!("{prefix}-encrypt-type"))? {
             match encrypt_type {
-                EncryptType::NONE => {
+                EncryptType::None => {
                     cfg.set_encrypt_none();
                 }
-                EncryptType::TLS => {
+                EncryptType::Tls => {
                     let hn = map.get_required(&format!("{prefix}-hostname"))?;
                     cfg.set_encrypt_tls(hn);
                     if let Some(ok) = map.get_optional(&format!("{prefix}-verify-cert"))? {
                         cfg.set_verify_cert(ok);
                     }
                 }
-                EncryptType::HTTPS => {
+                EncryptType::Https => {
                     let hn = map.get_required(&format!("{prefix}-hostname"))?;
                     let doh = map.get_required(&format!("{prefix}-doh-template"))?;
                     cfg.set_encrypt_https(hn, doh);
@@ -109,14 +109,14 @@ impl Config {
 
         if let Some(proxy_type) = map.get_optional(&format!("{prefix}-proxy-type"))? {
             match proxy_type {
-                ProxyType::NONE => {
+                ProxyType::None => {
                     cfg.set_proxy_none();
                 }
-                ProxyType::HTTP => {
+                ProxyType::Http => {
                     let pa: SocketAddr = map.get_required(&format!("{prefix}-proxy-addr"))?;
                     cfg.set_proxy_http(pa);
                 }
-                ProxyType::SOCKS5 => {
+                ProxyType::Socks5 => {
                     let pa: SocketAddr = map.get_required(&format!("{prefix}-proxy-addr"))?;
                     cfg.set_proxy_socks5(pa);
                 }
@@ -139,10 +139,10 @@ impl Config {
     }
 
     pub fn is_udp_available(&self) -> bool {
-        if self.encrypt_type == EncryptType::HTTPS || self.encrypt_type == EncryptType::TLS {
+        if self.encrypt_type == EncryptType::Https || self.encrypt_type == EncryptType::Tls {
             return false;
         }
-        if self.proxy_type == ProxyType::HTTP || self.proxy_type == ProxyType::SOCKS5 {
+        if self.proxy_type == ProxyType::Http || self.proxy_type == ProxyType::Socks5 {
             return false;
         }
         true
@@ -212,36 +212,36 @@ impl Config {
     }
 
     pub fn set_encrypt_none(&mut self) {
-        self.encrypt_type = EncryptType::NONE;
+        self.encrypt_type = EncryptType::None;
         self.hostname = None;
         self.set_reuse_tcp_connection(false);
     }
 
     pub fn set_encrypt_tls(&mut self, hostname: Name) {
-        self.encrypt_type = EncryptType::TLS;
+        self.encrypt_type = EncryptType::Tls;
         self.hostname = Some(hostname);
         self.set_reuse_tcp_connection(true);
     }
 
     pub fn set_encrypt_https(&mut self, hostname: Name, doh_template: String) {
-        self.encrypt_type = EncryptType::HTTPS;
+        self.encrypt_type = EncryptType::Https;
         self.hostname = Some(hostname);
         self.doh_template = Some(doh_template);
         self.set_reuse_tcp_connection(true);
     }
 
     pub fn set_proxy_none(&mut self) {
-        self.proxy_type = ProxyType::NONE;
+        self.proxy_type = ProxyType::None;
         self.proxy_addr = None;
     }
 
     pub fn set_proxy_http(&mut self, proxy_addr: SocketAddr) {
-        self.proxy_type = ProxyType::HTTP;
+        self.proxy_type = ProxyType::Http;
         self.proxy_addr = Some(proxy_addr);
     }
 
     pub fn set_proxy_socks5(&mut self, proxy_addr: SocketAddr) {
-        self.proxy_type = ProxyType::SOCKS5;
+        self.proxy_type = ProxyType::Socks5;
         self.proxy_addr = Some(proxy_addr);
     }
 }
@@ -250,10 +250,10 @@ impl fmt::Display for Config {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Config {{")?;
         write!(f, "{}", self.addr)?;
-        if self.encrypt_type != EncryptType::NONE {
+        if self.encrypt_type != EncryptType::None {
             write!(f, ",{:?}", self.encrypt_type)?;
         }
-        if self.proxy_type != ProxyType::NONE {
+        if self.proxy_type != ProxyType::None {
             write!(f, ",{:?}", self.proxy_type)?;
         }
         writeln!(f, "}}")

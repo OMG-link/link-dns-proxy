@@ -80,8 +80,8 @@ async fn get_connection(
     WriteHalf<Box<dyn AsyncStream>>,
 )> {
     let proxy_stream = match config.proxy_type() {
-        ProxyType::NONE => TcpStream::connect(config.addr()).await?,
-        ProxyType::HTTP => {
+        ProxyType::None => TcpStream::connect(config.addr()).await?,
+        ProxyType::Http => {
             let proxy_addr = config.proxy_addr();
             let upstream_addr = config.addr();
             let mut stream = TcpStream::connect(proxy_addr).await?;
@@ -110,7 +110,7 @@ async fn get_connection(
             }
             stream
         }
-        ProxyType::SOCKS5 => {
+        ProxyType::Socks5 => {
             let proxy_addr = config.proxy_addr();
             let upstream_addr = config.addr();
             Socks5Stream::connect(proxy_addr, upstream_addr)
@@ -119,8 +119,8 @@ async fn get_connection(
         }
     };
     let encrypt_stream: Box<dyn AsyncStream> = match config.encrypt_type() {
-        EncryptType::NONE => Box::new(proxy_stream),
-        EncryptType::TLS => {
+        EncryptType::None => Box::new(proxy_stream),
+        EncryptType::Tls => {
             let connector = native_tls::TlsConnector::builder()
                 .danger_accept_invalid_certs(!config.verify_cert())
                 .build()?;
@@ -129,7 +129,7 @@ async fn get_connection(
                 .await?;
             Box::new(tls)
         }
-        EncryptType::HTTPS => unreachable!("HTTPS should use HttpsConnection"),
+        EncryptType::Https => unreachable!("HTTPS should use HttpsConnection"),
     };
     let (reader, writer) = tokio::io::split(encrypt_stream);
     Ok((reader, writer))

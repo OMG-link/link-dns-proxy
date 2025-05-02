@@ -14,11 +14,11 @@ pub struct HttpsConnection {
 impl HttpsConnection {
     pub fn new(config: Config) -> Result<Self> {
         let mut builder = Client::builder().resolve(config.hostname().as_str(), config.addr());
-        if config.proxy_type() != ProxyType::NONE {
+        if config.proxy_type() != ProxyType::None {
             let proxy_url = match config.proxy_type() {
-                ProxyType::NONE => unreachable!(),
-                ProxyType::HTTP => format!("http://{}", config.proxy_addr()),
-                ProxyType::SOCKS5 => format!("socks5://{}", config.proxy_addr()),
+                ProxyType::None => unreachable!(),
+                ProxyType::Http => format!("http://{}", config.proxy_addr()),
+                ProxyType::Socks5 => format!("socks5://{}", config.proxy_addr()),
             };
             builder = builder.proxy(Proxy::all(&proxy_url)?);
         }
