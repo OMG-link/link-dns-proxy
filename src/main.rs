@@ -17,7 +17,7 @@ use dns_query::DnsQuery;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(long, default_value = "config/default.cfg")]
+    #[arg(long, default_value = "config/default.ini")]
     config: String,
 }
 

@@ -1,4 +1,4 @@
 /target
 /.vscode
-/config/test.cfg
+/config/test.ini
 /Cargo.lock
