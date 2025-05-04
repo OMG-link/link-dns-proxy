@@ -20,7 +20,7 @@ impl ConfigMap {
                 continue;
             }
             if let Some(pos) = line.find('=') {
-                let key = line[..pos].trim().to_string();
+                let key = line[..pos].trim().to_string().to_ascii_lowercase();
                 let val = line[pos + 1..].trim().to_string();
                 map.insert(key, val);
             }

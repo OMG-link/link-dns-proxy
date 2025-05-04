@@ -34,7 +34,11 @@ impl Connection for HttpsConnection {
         let bytes = msg.to_vec()?;
         let resp = self
             .client
-            .post(self.config.doh_template())
+            .post(format!(
+                "https://{}/{}",
+                self.config.hostname().as_str(),
+                self.config.doh_path()
+            ))
             .header("Content-Type", "application/dns-message")
             .body(bytes)
             .send()

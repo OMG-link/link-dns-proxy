@@ -1,4 +1,4 @@
-use super::{Config, Connection, EncryptType, ProxyType};
+use super::{Config, Connection, Protocol, ProxyType};
 use crate::DnsQuery;
 use anyhow::{Error, Result};
 use async_trait::async_trait;
@@ -118,9 +118,10 @@ async fn get_connection(
                 .into_inner()
         }
     };
-    let encrypt_stream: Box<dyn AsyncStream> = match config.encrypt_type() {
-        EncryptType::None => Box::new(proxy_stream),
-        EncryptType::Tls => {
+    let protocol_stream: Box<dyn AsyncStream> = match config.protocol_type() {
+        Protocol::Udp => unreachable!("UDP should use UdpConnection"),
+        Protocol::Tcp => Box::new(proxy_stream),
+        Protocol::Tls => {
             let connector = native_tls::TlsConnector::builder()
                 .danger_accept_invalid_certs(!config.verify_cert())
                 .build()?;
@@ -129,9 +130,9 @@ async fn get_connection(
                 .await?;
             Box::new(tls)
         }
-        EncryptType::Https => unreachable!("HTTPS should use HttpsConnection"),
+        Protocol::Https => unreachable!("HTTPS should use HttpsConnection"),
     };
-    let (reader, writer) = tokio::io::split(encrypt_stream);
+    let (reader, writer) = tokio::io::split(protocol_stream);
     Ok((reader, writer))
 }
 
