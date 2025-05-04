@@ -1,13 +1,36 @@
 use anyhow::Result;
 use reqwest::dns::Name;
+use serde::Deserialize;
 use std::fmt;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
 
-use crate::ConfigMap;
+#[derive(Debug, Deserialize)]
+pub struct ConfigYaml {
+    pub addr: SocketAddr,
+    #[serde(default)]
+    pub protocol: Option<Protocol>,
+    #[serde(default)]
+    pub hostname: Option<String>,
+    #[serde(default)]
+    pub doh_path: Option<String>,
+    #[serde(default)]
+    pub verify_cert: Option<bool>,
+    #[serde(default)]
+    pub proxy_type: Option<ProxyType>,
+    #[serde(default)]
+    pub proxy_addr: Option<SocketAddr>,
+    #[serde(default)]
+    pub timeout: Option<u64>,
+    #[serde(default)]
+    pub max_retry: Option<u8>,
+    #[serde(default)]
+    pub reuse_tcp_connection: Option<bool>,
+}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum Protocol {
     Udp,
     Tcp,
@@ -15,40 +38,15 @@ pub enum Protocol {
     Https,
 }
 
-impl FromStr for Protocol {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_ascii_uppercase().as_str() {
-            "UDP" => Ok(Protocol::Udp),
-            "TCP" => Ok(Protocol::Tcp),
-            "TLS" | "DOT" => Ok(Protocol::Tls),
-            "HTTPS" | "DOH" => Ok(Protocol::Https),
-            _ => Err(format!("Invalid protocol name: {}", s)),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum ProxyType {
     None,
     Socks5,
     Http,
 }
 
-impl FromStr for ProxyType {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_ascii_uppercase().as_str() {
-            "NONE" => Ok(ProxyType::None),
-            "SOCKS5" => Ok(ProxyType::Socks5),
-            "HTTP" => Ok(ProxyType::Http),
-            _ => Err(format!("Invalid proxy type: {}", s)),
-        }
-    }
-}
-
+#[derive(Debug)]
 pub struct Config {
     // DNS server IP
     addr: SocketAddr,
@@ -82,62 +80,67 @@ impl Config {
         }
     }
 
-    pub fn from_config_map(map: &mut ConfigMap, prefix: &str) -> Result<Self> {
-        let addr = map.get_required(&format!("{prefix}-addr"))?;
-        let mut cfg = crate::dns_server::Config::new(addr);
+    pub fn from_yaml(yaml: ConfigYaml) -> Result<Self> {
+        let mut cfg = Config::new(yaml.addr);
 
-        if let Some(protocol) = map.get_optional(&format!("{prefix}-protocol"))? {
-            match protocol {
-                Protocol::Udp => {
-                    cfg.set_protocol_udp();
-                }
-                Protocol::Tcp => {
-                    cfg.set_protocol_tcp();
-                }
+        if let Some(proto) = yaml.protocol {
+            match proto {
+                Protocol::Udp => cfg.set_protocol_udp(),
+                Protocol::Tcp => cfg.set_protocol_tcp(),
                 Protocol::Tls => {
-                    let hn = map.get_required(&format!("{prefix}-hostname"))?;
-                    cfg.set_protocol_tls(hn);
-                    if let Some(ok) = map.get_optional(&format!("{prefix}-verify-cert"))? {
-                        cfg.set_verify_cert(ok);
+                    let hn = yaml
+                        .hostname
+                        .ok_or_else(|| anyhow::anyhow!("hostname required for TLS"))?;
+                    let name = Name::from_str(&hn)?;
+                    cfg.set_protocol_tls(name);
+
+                    if let Some(v) = yaml.verify_cert {
+                        cfg.set_verify_cert(v);
                     }
                 }
                 Protocol::Https => {
-                    let hn = map.get_required(&format!("{prefix}-hostname"))?;
-                    let doh = map.get_required(&format!("{prefix}-doh-path"))?;
-                    cfg.set_protocol_https(hn, doh);
-                    if let Some(ok) = map.get_optional(&format!("{prefix}-verify-cert"))? {
-                        cfg.set_verify_cert(ok);
+                    let hn = yaml
+                        .hostname
+                        .ok_or_else(|| anyhow::anyhow!("hostname required for HTTPS"))?;
+                    let path = yaml
+                        .doh_path
+                        .ok_or_else(|| anyhow::anyhow!("doh_path required for HTTPS"))?;
+                    let name = Name::from_str(&hn)?;
+                    cfg.set_protocol_https(name, path);
+
+                    if let Some(v) = yaml.verify_cert {
+                        cfg.set_verify_cert(v);
                     }
                 }
             }
         }
 
-        if let Some(proxy_type) = map.get_optional(&format!("{prefix}-proxy-type"))? {
-            match proxy_type {
-                ProxyType::None => {
-                    cfg.set_proxy_none();
-                }
+        if let Some(pt) = yaml.proxy_type {
+            match pt {
+                ProxyType::None => cfg.set_proxy_none(),
                 ProxyType::Http => {
-                    let pa: SocketAddr = map.get_required(&format!("{prefix}-proxy-addr"))?;
+                    let pa = yaml
+                        .proxy_addr
+                        .ok_or_else(|| anyhow::anyhow!("proxy_addr required for HTTP proxy"))?;
                     cfg.set_proxy_http(pa);
                 }
                 ProxyType::Socks5 => {
-                    let pa: SocketAddr = map.get_required(&format!("{prefix}-proxy-addr"))?;
+                    let pa = yaml
+                        .proxy_addr
+                        .ok_or_else(|| anyhow::anyhow!("proxy_addr required for SOCKS5 proxy"))?;
                     cfg.set_proxy_socks5(pa);
                 }
             }
         }
 
-        if let Some(secs) = map.get_optional(&format!("{prefix}-timeout"))? {
-            cfg.set_timeout(Duration::from_millis(secs));
+        if let Some(ms) = yaml.timeout {
+            cfg.set_timeout(Duration::from_millis(ms));
         }
-
-        if let Some(cnt) = map.get_optional(&format!("{prefix}-max-retry"))? {
-            cfg.set_max_retry(cnt);
+        if let Some(r) = yaml.max_retry {
+            cfg.set_max_retry(r);
         }
-
-        if let Some(ok) = map.get_optional(&format!("{prefix}-reuse-tcp-connection"))? {
-            cfg.set_reuse_tcp_connection(ok);
+        if let Some(flag) = yaml.reuse_tcp_connection {
+            cfg.set_reuse_tcp_connection(flag);
         }
 
         Ok(cfg)
@@ -228,7 +231,6 @@ impl Config {
         self.protocol = Protocol::Https;
         self.hostname = Some(hostname);
         self.doh_path = Some(doh_path);
-        self.set_reuse_tcp_connection(true);
     }
 
     pub fn set_proxy_none(&mut self) {

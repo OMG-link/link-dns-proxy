@@ -1,0 +1,129 @@
+# ***********************************************
+# Example Configuration (example.yaml)
+# Demonstrates supported fields, meanings, default values,
+# and applicability across the four protocols (UDP / TCP / TLS / HTTPS).
+# ***********************************************
+
+listen_addrs:
+  # List of local addresses the DNS service will listen on.
+  # Optional. Default: ["0.0.0.0:53", "[::]:53"]
+  - "0.0.0.0:53"
+  - "[::]:53"
+
+dns_servers:
+  # --------------------------
+  # 1) UDP mode (default)
+  # --------------------------
+  - protocol: "UDP"
+    # Protocol type. Supported values: UDP / TCP / TLS / HTTPS
+    # Optional. Default: UDP
+
+    addr: "8.8.8.8:53"
+    # Remote DNS server address. IPv4 and IPv6 supported.
+    # Required.
+
+    timeout: 2000
+    # Request timeout in milliseconds.
+    # Optional. Default: 2000
+
+    max_retry: 2
+    # Maximum number of retries after failure.
+    # Optional. Default: 2
+
+    proxy_type: "NONE"
+    # Proxy type for DNS queries. Supported: NONE / SOCKS5 / HTTP
+    # Optional. Default: NONE
+
+    # proxy_addr: "127.0.0.1:1080"
+    # Proxy server address. Only applicable if proxy_type ≠ NONE.
+
+  # --------------------------
+  # 2) TCP mode
+  # --------------------------
+  - protocol: "TCP"
+    addr: "8.8.4.4:53"
+
+    timeout: 2000
+    # Request timeout in milliseconds.
+    # Optional. Default: 2000
+
+    max_retry: 2
+    # Maximum number of retries.
+    # Optional. Default: 2
+
+    reuse_tcp_connection: false
+    # Whether to reuse TCP connections.
+    # Optional. Default: false in TCP mode (most DNS servers do not allow reuse).
+
+    proxy_type: "HTTP"
+    # Proxy type for DNS queries.
+    # Optional. Default: NONE
+
+    proxy_addr: "127.0.0.1:1080"
+    # Proxy server address. Only applicable if proxy_type ≠ NONE.
+
+  # --------------------------
+  # 3) TLS mode (DoT - DNS over TLS)
+  # --------------------------
+  - protocol: "TLS"
+    addr: "[2001:4860:4860::8888]:853"
+
+    hostname: "dns.google"
+    # Remote server hostname.
+    # Required.
+
+    verify_cert: true
+    # Whether to verify the remote server's certificate.
+    # Optional. Default: true
+
+    timeout: 2000
+    # Request timeout in milliseconds.
+    # Optional. Default: 2000
+
+    max_retry: 2
+    # Maximum number of retries.
+    # Optional. Default: 2
+
+    reuse_tcp_connection: true
+    # Whether to reuse TCP connections.
+    # Optional. Default: true in TLS mode (reuse is typically supported).
+
+    proxy_type: "SOCKS5"
+    # Proxy type for DNS queries.
+    # Optional. Default: NONE
+
+    proxy_addr: "127.0.0.1:1080"
+    # Proxy server address. Only applicable if proxy_type ≠ NONE.
+
+  # --------------------------
+  # 4) HTTPS mode (DoH - DNS over HTTPS)
+  # --------------------------
+  - protocol: "HTTPS"
+    addr: "[2001:4860:4860::8844]:443"
+
+    hostname: "dns.google"
+    # Remote server hostname.
+    # Required.
+
+    doh_path: "dns-query"
+    # DoH request path, typically "dns-query".
+    # Required.
+
+    verify_cert: true
+    # Whether to verify the remote server's certificate.
+    # Optional. Default: true
+
+    timeout: 2000
+    # Request timeout in milliseconds.
+    # Optional. Default: 2000
+
+    max_retry: 2
+    # Maximum number of retries.
+    # Optional. Default: 2
+
+    proxy_type: "SOCKS5"
+    # Proxy type.
+    # Optional. Default: NONE
+
+    proxy_addr: "127.0.0.1:1080"
+    # Proxy server address. Only applicable if proxy_type ≠ NONE.

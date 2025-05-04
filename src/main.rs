@@ -10,14 +10,13 @@ use clap::Parser;
 use tracing::error;
 
 use config::Config;
-use config::ConfigMap;
 use dns_proxy::DnsProxy;
 use dns_query::DnsQuery;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(long, default_value = "config/default.ini")]
+    #[arg(long, default_value = "config/default.yaml")]
     config: String,
 }
 
