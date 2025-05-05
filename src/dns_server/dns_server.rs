@@ -7,16 +7,25 @@ use super::{Config, Connection, HttpsConnection, Protocol, TcpConnection, UdpCon
 
 pub struct DnsServer {
     conn: Box<dyn Connection>,
+    filters: Vec<String>,
 }
 
 impl DnsServer {
     pub fn new(config: Config) -> Result<Self> {
+        let filters = config.filters().clone();
         let boxed_conn: Box<dyn Connection> = match config.protocol_type() {
             Protocol::Udp => Box::new(UdpConnection::new(config)),
             Protocol::Tcp | Protocol::Tls => Box::new(TcpConnection::new(config)),
             Protocol::Https => Box::new(HttpsConnection::new(config)?),
         };
-        Ok(DnsServer { conn: boxed_conn })
+        Ok(DnsServer {
+            conn: boxed_conn,
+            filters,
+        })
+    }
+
+    pub fn filters(&self) -> &Vec<String> {
+        &self.filters
     }
 
     pub fn query(&self, dns_query: &DnsQuery) -> BoxFuture<'_, Result<Message>> {

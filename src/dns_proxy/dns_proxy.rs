@@ -10,8 +10,10 @@ use tokio::net::UdpSocket;
 use tokio::sync::{Mutex, oneshot};
 use tracing::{error, info, trace, warn};
 use trust_dns_proto::op::Message;
+use trust_dns_proto::rr::Name;
 
 use super::cache::{DnsCache, DnsCacheEntry};
+use super::filter::FilterTrie;
 use crate::dns_query::DnsQuery;
 use crate::dns_server::DnsServer;
 
@@ -46,25 +48,41 @@ impl PendingQuery {
 }
 
 pub struct DnsProxy {
-    upstream_servers: Vec<DnsServer>,
+    upstream_servers: Vec<Arc<DnsServer>>,
+    filter_trie: FilterTrie,
     dns_cache: Arc<Mutex<DnsCache>>,
     pending_querys: Arc<Mutex<HashMap<DnsQuery, PendingQuery>>>,
 }
 
 impl DnsProxy {
-    pub fn new(dns_server_configs: Vec<crate::dns_server::Config>) -> Result<Self> {
-        let upstream_servers = dns_server_configs
-            .into_iter()
-            .map(|config| DnsServer::new(config))
-            .collect::<Result<Vec<_>, _>>()?;
-        let dns_cache = Arc::new(Mutex::new(HashMap::new()));
-        let pending_querys = Arc::new(Mutex::new(HashMap::new()));
+    pub fn new(server_configs: Vec<crate::dns_server::Config>) -> Result<Self> {
+        let mut upstream_servers = Vec::new();
+        for cfg in server_configs {
+            let server = DnsServer::new(cfg)?;
+            upstream_servers.push(Arc::new(server));
+        }
+
+        let mut trie = FilterTrie::new();
+        for (idx, server) in upstream_servers.iter().enumerate() {
+            for pattern in server.filters().iter() {
+                trie.insert(pattern, idx);
+            }
+        }
 
         Ok(DnsProxy {
             upstream_servers,
-            dns_cache,
-            pending_querys,
+            filter_trie: trie,
+            dns_cache: Arc::new(Mutex::new(HashMap::new())),
+            pending_querys: Arc::new(Mutex::new(HashMap::new())),
         })
+    }
+
+    pub fn get_available_upstreams(self: &Arc<Self>, domain: Name) -> Vec<Arc<DnsServer>> {
+        self.filter_trie
+            .query(&domain)
+            .into_iter()
+            .map(|id| self.upstream_servers[id].clone())
+            .collect()
     }
 
     pub async fn listen_and_serve(self: Arc<Self>, listen_addrs: Vec<SocketAddr>) -> Result<()> {
@@ -205,28 +223,40 @@ impl DnsProxy {
                 let self_cloned = self.clone();
                 let query = query.clone();
                 tokio::spawn(async move {
-                    let lookup_result = self_cloned.upstream_servers[0].query(&query).await;
-                    match lookup_result {
-                        Ok(msg_upstream) => {
-                            let msg_cache: Message;
-                            {
-                                let msg = Arc::new(msg_upstream);
-                                let mut cache = self_cloned.dns_cache.lock().await;
-                                cache.insert(query.clone(), DnsCacheEntry::new(msg));
-                                msg_cache = cache.get(&query).unwrap().get_message();
-                            }
-                            {
-                                let mut pending = self_cloned.pending_querys.lock().await;
-                                if let Some(pq) = pending.remove(&query) {
-                                    pq.notify_all(Arc::new(Ok(msg_cache)));
+                    let available_servers =
+                        self_cloned.get_available_upstreams(query.domain.clone());
+                    if available_servers.is_empty() {
+                        let msg =
+                            format!("No available upstream server found for {}", query.domain);
+                        warn!("{msg}");
+                        let mut pending = self_cloned.pending_querys.lock().await;
+                        let pq = pending.remove(&query).unwrap();
+                        pq.notify_all(Arc::new(Err(anyhow::anyhow!(msg))));
+                    } else {
+                        let lookup_result = available_servers[0].query(&query).await;
+                        // TODO: switch to secondary upstream server when primary server fails.
+                        match lookup_result {
+                            Ok(msg_upstream) => {
+                                let msg_cache: Message;
+                                {
+                                    let msg = Arc::new(msg_upstream);
+                                    let mut cache = self_cloned.dns_cache.lock().await;
+                                    cache.insert(query.clone(), DnsCacheEntry::new(msg));
+                                    msg_cache = cache.get(&query).unwrap().get_message();
+                                }
+                                {
+                                    let mut pending = self_cloned.pending_querys.lock().await;
+                                    if let Some(pq) = pending.remove(&query) {
+                                        pq.notify_all(Arc::new(Ok(msg_cache)));
+                                    }
                                 }
                             }
-                        }
-                        Err(e) => {
-                            warn!("Upstream lookup failed: {}", e);
-                            let mut pending = self_cloned.pending_querys.lock().await;
-                            let pq = pending.remove(&query).unwrap();
-                            pq.notify_all(Arc::new(Err(e)));
+                            Err(e) => {
+                                warn!("Upstream lookup failed: {}", e);
+                                let mut pending = self_cloned.pending_querys.lock().await;
+                                let pq = pending.remove(&query).unwrap();
+                                pq.notify_all(Arc::new(Err(e)));
+                            }
                         }
                     }
                 });

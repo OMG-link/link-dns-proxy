@@ -22,6 +22,20 @@ dns_servers:
     # Protocol type. Supported values: UDP / TCP / TLS / HTTPS
     # Optional. Default: UDP
 
+    filters:
+      # A list of domain filters. Only domain names matching these filters will be forwarded to this DNS server.
+      # Two filter formats are supported:
+      #   1. Exact domain match (e.g., "www.example.com")
+      #   2. Subdomain wildcard match (e.g., "*.example.org")
+      #
+      # Notes:
+      # - A wildcard filter like "*.example.org" matches subdomains such as "foo.example.org" but does NOT match "example.org" itself.
+      # - To include both the base domain and its subdomains, specify both "example.org" and "*.example.org" explicitly.
+      #
+      # Optional. If omitted, all domain queries ("*") are forwarded to this DNS server.
+      - "www.example.com"
+      - "*.example.org"
+
     timeout: 2000
     # Request timeout in milliseconds.
     # Optional. Default: 2000
@@ -43,6 +57,12 @@ dns_servers:
   # --------------------------
   - addr: "8.8.4.4:53"
     protocol: "TCP"
+
+    filters:
+      # Domain filters for this DNS server. See 'filters' in UDP mode above for details.
+      # Optional. Default: "*"
+      - "www.example.com"
+      - "*.example.org"
 
     timeout: 2000
     # Request timeout in milliseconds.
@@ -77,6 +97,12 @@ dns_servers:
     verify_cert: true
     # Whether to verify the remote server's certificate.
     # Optional. Default: true
+
+    filters:
+      # Domain filters for this DNS server. See 'filters' in UDP mode above for details.
+      # Optional. Default: "*"
+      - "www.example.com"
+      - "*.example.org"
 
     timeout: 2000
     # Request timeout in milliseconds.
@@ -115,6 +141,12 @@ dns_servers:
     verify_cert: true
     # Whether to verify the remote server's certificate.
     # Optional. Default: true
+
+    filters:
+      # Domain filters for this DNS server. See 'filters' in UDP mode above for details.
+      # Optional. Default: "*"
+      - "www.example.com"
+      - "*.example.org"
 
     timeout: 2000
     # Request timeout in milliseconds.

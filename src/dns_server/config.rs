@@ -1,10 +1,12 @@
 use anyhow::Result;
-use reqwest::dns::Name;
+use reqwest::dns::Name as ReqwestName;
 use serde::Deserialize;
 use std::fmt;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
+use tracing::warn;
+use trust_dns_proto::rr::Name as TrustName;
 
 #[derive(Debug, Deserialize)]
 pub struct ConfigYaml {
@@ -18,6 +20,7 @@ pub struct ConfigYaml {
     pub timeout: Option<u64>,
     pub max_retry: Option<u8>,
     pub reuse_tcp_connection: Option<bool>,
+    pub filters: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -43,7 +46,7 @@ pub struct Config {
     addr: SocketAddr,
     // protocol info
     protocol: Protocol,
-    hostname: Option<Name>,
+    hostname: Option<ReqwestName>,
     doh_path: Option<String>,
     verify_cert: bool,
     // proxy info
@@ -53,6 +56,8 @@ pub struct Config {
     timeout: Duration,
     max_retry: u8,
     reuse_tcp_connection: bool,
+    // filter info
+    filters: Vec<String>,
 }
 
 impl Config {
@@ -68,70 +73,106 @@ impl Config {
             timeout: Duration::from_secs(2),
             max_retry: 2,
             reuse_tcp_connection: false,
+            filters: vec![String::from("*")],
         }
     }
 
     pub fn from_yaml(yaml: ConfigYaml) -> Result<Self> {
-        let mut cfg = Config::new(yaml.addr);
+        let ConfigYaml {
+            addr,
+            protocol,
+            hostname,
+            doh_path,
+            verify_cert,
+            proxy_type,
+            proxy_addr,
+            timeout,
+            max_retry,
+            reuse_tcp_connection,
+            filters,
+        } = yaml;
+        let mut cfg = Config::new(addr);
 
-        if let Some(proto) = yaml.protocol {
-            match proto {
+        if let Some(protocol) = protocol {
+            match protocol {
                 Protocol::Udp => cfg.set_protocol_udp(),
                 Protocol::Tcp => cfg.set_protocol_tcp(),
                 Protocol::Tls => {
-                    let hn = yaml
-                        .hostname
-                        .ok_or_else(|| anyhow::anyhow!("hostname required for TLS"))?;
-                    let name = Name::from_str(&hn)?;
+                    let hn =
+                        hostname.ok_or_else(|| anyhow::anyhow!("hostname required for TLS"))?;
+                    let name = ReqwestName::from_str(&hn)?;
                     cfg.set_protocol_tls(name);
 
-                    if let Some(v) = yaml.verify_cert {
+                    if let Some(v) = verify_cert {
                         cfg.set_verify_cert(v);
                     }
                 }
                 Protocol::Https => {
-                    let hn = yaml
-                        .hostname
-                        .ok_or_else(|| anyhow::anyhow!("hostname required for HTTPS"))?;
-                    let path = yaml
-                        .doh_path
-                        .ok_or_else(|| anyhow::anyhow!("doh_path required for HTTPS"))?;
-                    let name = Name::from_str(&hn)?;
+                    let hn =
+                        hostname.ok_or_else(|| anyhow::anyhow!("hostname required for HTTPS"))?;
+                    let path =
+                        doh_path.ok_or_else(|| anyhow::anyhow!("doh_path required for HTTPS"))?;
+                    let name = ReqwestName::from_str(&hn)?;
                     cfg.set_protocol_https(name, path);
 
-                    if let Some(v) = yaml.verify_cert {
+                    if let Some(v) = verify_cert {
                         cfg.set_verify_cert(v);
                     }
                 }
             }
         }
 
-        if let Some(pt) = yaml.proxy_type {
+        if let Some(pt) = proxy_type {
             match pt {
                 ProxyType::None => cfg.set_proxy_none(),
                 ProxyType::Http => {
-                    let pa = yaml
-                        .proxy_addr
+                    let pa = proxy_addr
                         .ok_or_else(|| anyhow::anyhow!("proxy_addr required for HTTP proxy"))?;
                     cfg.set_proxy_http(pa);
                 }
                 ProxyType::Socks5 => {
-                    let pa = yaml
-                        .proxy_addr
+                    let pa = proxy_addr
                         .ok_or_else(|| anyhow::anyhow!("proxy_addr required for SOCKS5 proxy"))?;
                     cfg.set_proxy_socks5(pa);
                 }
             }
         }
 
-        if let Some(ms) = yaml.timeout {
+        if let Some(ms) = timeout {
             cfg.set_timeout(Duration::from_millis(ms));
         }
-        if let Some(r) = yaml.max_retry {
+        if let Some(r) = max_retry {
             cfg.set_max_retry(r);
         }
-        if let Some(flag) = yaml.reuse_tcp_connection {
+        if let Some(flag) = reuse_tcp_connection {
             cfg.set_reuse_tcp_connection(flag);
+        }
+        if let Some(filters) = filters {
+            let cleaned: Vec<String> = filters
+                .into_iter()
+                .filter_map(|f| {
+                    if f.is_empty() {
+                        warn!("Skipping empty filter");
+                        return None;
+                    }
+                    let encoded = match TrustName::from_utf8(&f) {
+                        Ok(name) => name.to_ascii(),
+                        Err(e) => {
+                            warn!("Skipping '{}': invalid domain ({})", f, e);
+                            return None;
+                        }
+                    };
+                    if encoded.len() > 1 && encoded[1..].contains('*') {
+                        warn!(
+                            "Skipping '{}': '*' can only appear at the very beginning",
+                            f
+                        );
+                        return None;
+                    }
+                    Some(encoded)
+                })
+                .collect();
+            cfg.set_filters(cleaned);
         }
 
         Ok(cfg)
@@ -162,7 +203,7 @@ impl Config {
         self.reuse_tcp_connection
     }
 
-    pub fn hostname(&self) -> &Name {
+    pub fn hostname(&self) -> &ReqwestName {
         self.hostname.as_ref().unwrap()
     }
 
@@ -176,6 +217,10 @@ impl Config {
 
     pub fn verify_cert(&self) -> bool {
         self.verify_cert
+    }
+
+    pub fn filters(&self) -> &Vec<String> {
+        &self.filters
     }
 
     // Setters
@@ -200,6 +245,10 @@ impl Config {
         self.verify_cert = verify_cert;
     }
 
+    pub fn set_filters(&mut self, filters: Vec<String>) {
+        self.filters = filters;
+    }
+
     pub fn set_protocol_udp(&mut self) {
         self.protocol = Protocol::Udp;
         self.hostname = None;
@@ -212,13 +261,13 @@ impl Config {
         self.set_reuse_tcp_connection(false);
     }
 
-    pub fn set_protocol_tls(&mut self, hostname: Name) {
+    pub fn set_protocol_tls(&mut self, hostname: ReqwestName) {
         self.protocol = Protocol::Tls;
         self.hostname = Some(hostname);
         self.set_reuse_tcp_connection(true);
     }
 
-    pub fn set_protocol_https(&mut self, hostname: Name, doh_path: String) {
+    pub fn set_protocol_https(&mut self, hostname: ReqwestName, doh_path: String) {
         self.protocol = Protocol::Https;
         self.hostname = Some(hostname);
         self.doh_path = Some(doh_path);
