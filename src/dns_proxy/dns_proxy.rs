@@ -52,7 +52,7 @@ pub struct DnsProxy {
 }
 
 impl DnsProxy {
-    pub async fn new(dns_server_configs: Vec<crate::dns_server::Config>) -> Result<Self> {
+    pub fn new(dns_server_configs: Vec<crate::dns_server::Config>) -> Result<Self> {
         let upstream_servers = dns_server_configs
             .into_iter()
             .map(|config| DnsServer::new(config))

@@ -25,7 +25,7 @@ async fn run(config_path: &str) -> Result<()> {
         listen_addrs,
         dns_server_configs,
     } = Config::from_file(config_path)?;
-    let dns_proxy = Arc::new(DnsProxy::new(dns_server_configs).await.unwrap());
+    let dns_proxy = Arc::new(DnsProxy::new(dns_server_configs).unwrap());
     dns_proxy.listen_and_serve(listen_addrs).await?;
     Ok(())
 }
