@@ -9,23 +9,14 @@ use std::time::Duration;
 #[derive(Debug, Deserialize)]
 pub struct ConfigYaml {
     pub addr: SocketAddr,
-    #[serde(default)]
     pub protocol: Option<Protocol>,
-    #[serde(default)]
     pub hostname: Option<String>,
-    #[serde(default)]
     pub doh_path: Option<String>,
-    #[serde(default)]
     pub verify_cert: Option<bool>,
-    #[serde(default)]
     pub proxy_type: Option<ProxyType>,
-    #[serde(default)]
     pub proxy_addr: Option<SocketAddr>,
-    #[serde(default)]
     pub timeout: Option<u64>,
-    #[serde(default)]
     pub max_retry: Option<u8>,
-    #[serde(default)]
     pub reuse_tcp_connection: Option<bool>,
 }
 
