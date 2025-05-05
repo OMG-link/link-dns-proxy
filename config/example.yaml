@@ -14,13 +14,13 @@ dns_servers:
   # --------------------------
   # 1) UDP mode (default)
   # --------------------------
-  - protocol: "UDP"
-    # Protocol type. Supported values: UDP / TCP / TLS / HTTPS
-    # Optional. Default: UDP
-
-    addr: "8.8.8.8:53"
+  - addr: "8.8.8.8:53"
     # Remote DNS server address. IPv4 and IPv6 supported.
     # Required.
+    
+    protocol: "UDP"
+    # Protocol type. Supported values: UDP / TCP / TLS / HTTPS
+    # Optional. Default: UDP
 
     timeout: 2000
     # Request timeout in milliseconds.
@@ -31,17 +31,18 @@ dns_servers:
     # Optional. Default: 2
 
     proxy_type: "NONE"
-    # Proxy type for DNS queries. Supported: NONE / SOCKS5 / HTTP
+    # Proxy type for DNS queries. Supported values: NONE / SOCKS5 / HTTP
     # Optional. Default: NONE
 
     # proxy_addr: "127.0.0.1:1080"
-    # Proxy server address. Only applicable if proxy_type ≠ NONE.
+    # Proxy server address.
+    # Required if proxy_type ≠ NONE.
 
   # --------------------------
   # 2) TCP mode
   # --------------------------
-  - protocol: "TCP"
-    addr: "8.8.4.4:53"
+  - addr: "8.8.4.4:53"
+    protocol: "TCP"
 
     timeout: 2000
     # Request timeout in milliseconds.
@@ -60,13 +61,14 @@ dns_servers:
     # Optional. Default: NONE
 
     proxy_addr: "127.0.0.1:1080"
-    # Proxy server address. Only applicable if proxy_type ≠ NONE.
+    # Proxy server address.
+    # Required if proxy_type ≠ NONE.
 
   # --------------------------
   # 3) TLS mode (DoT - DNS over TLS)
   # --------------------------
-  - protocol: "TLS"
-    addr: "[2001:4860:4860::8888]:853"
+  - addr: "[2001:4860:4860::8888]:853"
+    protocol: "TLS"
 
     hostname: "dns.google"
     # Remote server hostname.
@@ -93,20 +95,21 @@ dns_servers:
     # Optional. Default: NONE
 
     proxy_addr: "127.0.0.1:1080"
-    # Proxy server address. Only applicable if proxy_type ≠ NONE.
+    # Proxy server address.
+    # Required if proxy_type ≠ NONE.
 
   # --------------------------
   # 4) HTTPS mode (DoH - DNS over HTTPS)
   # --------------------------
-  - protocol: "HTTPS"
-    addr: "[2001:4860:4860::8844]:443"
+  - addr: "[2001:4860:4860::8844]:443"
+    protocol: "HTTPS"
 
     hostname: "dns.google"
     # Remote server hostname.
     # Required.
 
     doh_path: "dns-query"
-    # DoH request path, typically "dns-query".
+    # DoH request path, typically "dns-query". The URL actually used would be "https://{hostname}/{doh_path}".
     # Required.
 
     verify_cert: true
@@ -126,4 +129,5 @@ dns_servers:
     # Optional. Default: NONE
 
     proxy_addr: "127.0.0.1:1080"
-    # Proxy server address. Only applicable if proxy_type ≠ NONE.
+    # Proxy server address.
+    # Required if proxy_type ≠ NONE.

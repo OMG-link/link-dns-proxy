@@ -3,10 +3,10 @@ listen_addrs:
   - "[::]:53"
 
 dns_servers:
-  - protocol: "UDP"
-    addr: "8.8.8.8:53"
+  - addr: "8.8.8.8:53"
+    protocol: "UDP"
 
-  - protocol: "HTTPS"
-    addr: "8.8.4.4:443"
+  - addr: "8.8.4.4:443"
+    protocol: "HTTPS"
     hostname: "dns.google"
     doh_path: "dns-query"
