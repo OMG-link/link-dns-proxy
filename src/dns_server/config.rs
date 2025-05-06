@@ -10,13 +10,13 @@ use trust_dns_proto::rr::Name as TrustName;
 
 #[derive(Debug, Deserialize)]
 pub struct ConfigYaml {
-    pub addr: SocketAddr,
+    pub address: SocketAddr,
     pub protocol: Option<Protocol>,
     pub hostname: Option<String>,
     pub doh_path: Option<String>,
     pub verify_cert: Option<bool>,
     pub proxy_type: Option<ProxyType>,
-    pub proxy_addr: Option<SocketAddr>,
+    pub proxy_address: Option<SocketAddr>,
     pub timeout: Option<u64>,
     pub max_retry: Option<u8>,
     pub reuse_tcp_connection: Option<bool>,
@@ -43,7 +43,7 @@ pub enum ProxyType {
 #[derive(Debug)]
 pub struct Config {
     // DNS server IP
-    addr: SocketAddr,
+    address: SocketAddr,
     // protocol info
     protocol: Protocol,
     hostname: Option<ReqwestName>,
@@ -51,7 +51,7 @@ pub struct Config {
     verify_cert: bool,
     // proxy info
     proxy_type: ProxyType,
-    proxy_addr: Option<SocketAddr>,
+    proxy_address: Option<SocketAddr>,
     // optional info
     timeout: Duration,
     max_retry: u8,
@@ -61,15 +61,15 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(addr: SocketAddr) -> Self {
+    pub fn new(address: SocketAddr) -> Self {
         Self {
-            addr,
+            address,
             protocol: Protocol::Udp,
             hostname: None,
             doh_path: None,
             verify_cert: true,
             proxy_type: ProxyType::None,
-            proxy_addr: None,
+            proxy_address: None,
             timeout: Duration::from_secs(2),
             max_retry: 2,
             reuse_tcp_connection: false,
@@ -79,19 +79,19 @@ impl Config {
 
     pub fn from_yaml(yaml: ConfigYaml) -> Result<Self> {
         let ConfigYaml {
-            addr,
+            address,
             protocol,
             hostname,
             doh_path,
             verify_cert,
             proxy_type,
-            proxy_addr,
+            proxy_address,
             timeout,
             max_retry,
             reuse_tcp_connection,
             filters,
         } = yaml;
-        let mut cfg = Config::new(addr);
+        let mut cfg = Config::new(address);
 
         if let Some(protocol) = protocol {
             match protocol {
@@ -126,13 +126,13 @@ impl Config {
             match pt {
                 ProxyType::None => cfg.set_proxy_none(),
                 ProxyType::Http => {
-                    let pa = proxy_addr
-                        .ok_or_else(|| anyhow::anyhow!("proxy_addr required for HTTP proxy"))?;
+                    let pa = proxy_address
+                        .ok_or_else(|| anyhow::anyhow!("proxy_address required for HTTP proxy"))?;
                     cfg.set_proxy_http(pa);
                 }
                 ProxyType::Socks5 => {
-                    let pa = proxy_addr
-                        .ok_or_else(|| anyhow::anyhow!("proxy_addr required for SOCKS5 proxy"))?;
+                    let pa = proxy_address
+                        .ok_or_else(|| anyhow::anyhow!("proxy_address required for SOCKS5 proxy"))?;
                     cfg.set_proxy_socks5(pa);
                 }
             }
@@ -179,8 +179,8 @@ impl Config {
     }
 
     // Getters
-    pub fn addr(&self) -> SocketAddr {
-        self.addr
+    pub fn address(&self) -> SocketAddr {
+        self.address
     }
 
     pub fn protocol_type(&self) -> Protocol {
@@ -211,8 +211,8 @@ impl Config {
         self.doh_path.as_ref().unwrap()
     }
 
-    pub fn proxy_addr(&self) -> SocketAddr {
-        self.proxy_addr.unwrap()
+    pub fn proxy_address(&self) -> SocketAddr {
+        self.proxy_address.unwrap()
     }
 
     pub fn verify_cert(&self) -> bool {
@@ -225,8 +225,8 @@ impl Config {
 
     // Setters
     #[allow(dead_code)]
-    pub fn set_addr(&mut self, addr: SocketAddr) {
-        self.addr = addr;
+    pub fn set_address(&mut self, address: SocketAddr) {
+        self.address = address;
     }
 
     pub fn set_timeout(&mut self, timeout: Duration) {
@@ -275,24 +275,24 @@ impl Config {
 
     pub fn set_proxy_none(&mut self) {
         self.proxy_type = ProxyType::None;
-        self.proxy_addr = None;
+        self.proxy_address = None;
     }
 
-    pub fn set_proxy_http(&mut self, proxy_addr: SocketAddr) {
+    pub fn set_proxy_http(&mut self, proxy_address: SocketAddr) {
         self.proxy_type = ProxyType::Http;
-        self.proxy_addr = Some(proxy_addr);
+        self.proxy_address = Some(proxy_address);
     }
 
-    pub fn set_proxy_socks5(&mut self, proxy_addr: SocketAddr) {
+    pub fn set_proxy_socks5(&mut self, proxy_address: SocketAddr) {
         self.proxy_type = ProxyType::Socks5;
-        self.proxy_addr = Some(proxy_addr);
+        self.proxy_address = Some(proxy_address);
     }
 }
 
 impl fmt::Display for Config {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Config {{")?;
-        write!(f, "{}", self.addr)?;
+        write!(f, "{}", self.address)?;
         if self.protocol != Protocol::Udp {
             write!(f, ",{:?}", self.protocol)?;
         }

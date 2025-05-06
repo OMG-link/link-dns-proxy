@@ -10,7 +10,7 @@ struct ConfigYaml {
 
 #[derive(Debug)]
 pub struct Config {
-    pub listen_addrs: Vec<SocketAddr>,
+    pub listen_addresses: Vec<SocketAddr>,
     pub dns_server_configs: Vec<crate::dns_server::Config>,
 }
 
@@ -19,7 +19,7 @@ impl Config {
         let content = fs::read_to_string(path)?;
         let config_yaml: ConfigYaml = serde_yaml::from_str(&content)?;
 
-        let listen_addrs = config_yaml
+        let listen_addresses = config_yaml
             .listen_addresses
             .unwrap_or_else(|| vec!["0.0.0.0:53".parse().unwrap(), "[::]:53".parse().unwrap()]);
 
@@ -33,7 +33,7 @@ impl Config {
         }
 
         Ok(Self {
-            listen_addrs,
+            listen_addresses,
             dns_server_configs: dns_confs,
         })
     }

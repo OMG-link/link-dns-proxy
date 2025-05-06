@@ -22,11 +22,11 @@ struct Args {
 
 async fn run(config_path: &str) -> Result<()> {
     let Config {
-        listen_addrs,
+        listen_addresses,
         dns_server_configs,
     } = Config::from_file(config_path)?;
     let dns_proxy = Arc::new(DnsProxy::new(dns_server_configs).unwrap());
-    dns_proxy.listen_and_serve(listen_addrs).await?;
+    dns_proxy.listen_and_serve(listen_addresses).await?;
     Ok(())
 }
 

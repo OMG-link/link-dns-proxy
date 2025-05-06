@@ -80,15 +80,15 @@ async fn get_connection(
     WriteHalf<Box<dyn AsyncStream>>,
 )> {
     let proxy_stream = match config.proxy_type() {
-        ProxyType::None => TcpStream::connect(config.addr()).await?,
+        ProxyType::None => TcpStream::connect(config.address()).await?,
         ProxyType::Http => {
-            let proxy_addr = config.proxy_addr();
-            let upstream_addr = config.addr();
-            let mut stream = TcpStream::connect(proxy_addr).await?;
+            let proxy_address = config.proxy_address();
+            let upstream_address = config.address();
+            let mut stream = TcpStream::connect(proxy_address).await?;
             let req = format!(
                 "CONNECT {ip}:{port} HTTP/1.1\r\nHost: {ip}:{port}\r\n\r\n",
-                ip = upstream_addr.ip(),
-                port = upstream_addr.port()
+                ip = upstream_address.ip(),
+                port = upstream_address.port()
             );
             stream.write_all(req.as_bytes()).await?;
             let mut buf = Vec::new();
@@ -111,9 +111,9 @@ async fn get_connection(
             stream
         }
         ProxyType::Socks5 => {
-            let proxy_addr = config.proxy_addr();
-            let upstream_addr = config.addr();
-            Socks5Stream::connect(proxy_addr, upstream_addr)
+            let proxy_address = config.proxy_address();
+            let upstream_address = config.address();
+            Socks5Stream::connect(proxy_address, upstream_address)
                 .await?
                 .into_inner()
         }

@@ -4,7 +4,7 @@
 # and applicability across the four protocols (UDP / TCP / TLS / HTTPS).
 # ***********************************************
 
-listen_addrs:
+listen_addresses:
   # List of local addresses the DNS service will listen on.
   # Optional. Default: ["0.0.0.0:53", "[::]:53"]
   - "0.0.0.0:53"
@@ -14,7 +14,7 @@ dns_servers:
   # --------------------------
   # 1) UDP mode (default)
   # --------------------------
-  - addr: "8.8.8.8:53"
+  - address: "8.8.8.8:53"
     # Remote DNS server address. IPv4 and IPv6 supported.
     # Required.
     
@@ -48,14 +48,14 @@ dns_servers:
     # Proxy type for DNS queries. Supported values: NONE / SOCKS5 / HTTP
     # Optional. Default: NONE
 
-    # proxy_addr: "127.0.0.1:1080"
+    # proxy_address: "127.0.0.1:1080"
     # Proxy server address.
     # Required if proxy_type ≠ NONE.
 
   # --------------------------
   # 2) TCP mode
   # --------------------------
-  - addr: "8.8.4.4:53"
+  - address: "8.8.4.4:53"
     protocol: "TCP"
 
     filters:
@@ -80,14 +80,14 @@ dns_servers:
     # Proxy type for DNS queries.
     # Optional. Default: NONE
 
-    proxy_addr: "127.0.0.1:1080"
+    proxy_address: "127.0.0.1:1080"
     # Proxy server address.
     # Required if proxy_type ≠ NONE.
 
   # --------------------------
   # 3) TLS mode (DoT - DNS over TLS)
   # --------------------------
-  - addr: "[2001:4860:4860::8888]:853"
+  - address: "[2001:4860:4860::8888]:853"
     protocol: "TLS"
 
     hostname: "dns.google"
@@ -120,14 +120,14 @@ dns_servers:
     # Proxy type for DNS queries.
     # Optional. Default: NONE
 
-    proxy_addr: "127.0.0.1:1080"
+    proxy_address: "127.0.0.1:1080"
     # Proxy server address.
     # Required if proxy_type ≠ NONE.
 
   # --------------------------
   # 4) HTTPS mode (DoH - DNS over HTTPS)
   # --------------------------
-  - addr: "[2001:4860:4860::8844]:443"
+  - address: "[2001:4860:4860::8844]:443"
     protocol: "HTTPS"
 
     hostname: "dns.google"
@@ -160,6 +160,6 @@ dns_servers:
     # Proxy type.
     # Optional. Default: NONE
 
-    proxy_addr: "127.0.0.1:1080"
+    proxy_address: "127.0.0.1:1080"
     # Proxy server address.
     # Required if proxy_type ≠ NONE.

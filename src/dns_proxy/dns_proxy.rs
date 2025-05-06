@@ -85,16 +85,16 @@ impl DnsProxy {
             .collect()
     }
 
-    pub async fn listen_and_serve(self: Arc<Self>, listen_addrs: Vec<SocketAddr>) -> Result<()> {
+    pub async fn listen_and_serve(self: Arc<Self>, listen_addresses: Vec<SocketAddr>) -> Result<()> {
         let mut listen_threads = Vec::new();
-        for listen_addr in listen_addrs.into_iter() {
+        for listen_address in listen_addresses.into_iter() {
             let self_cloned = self.clone();
-            let listen_addr_cloned = listen_addr.clone();
+            let listen_address_cloned = listen_address.clone();
             let listen_thread = tokio::spawn(async move {
-                match self_cloned.listen_and_serve_port(listen_addr_cloned).await {
+                match self_cloned.listen_and_serve_port(listen_address_cloned).await {
                     Ok(()) => (),
                     Err(e) => {
-                        error!("Worker listening {} crashed: {}", listen_addr, e);
+                        error!("Worker listening {} crashed: {}", listen_address, e);
                     }
                 };
             });
@@ -106,11 +106,11 @@ impl DnsProxy {
         Ok(())
     }
 
-    async fn listen_and_serve_port(self: Arc<Self>, listen_addr: SocketAddr) -> Result<()> {
-        let listener = Arc::new(UdpSocket::bind(listen_addr).await?);
+    async fn listen_and_serve_port(self: Arc<Self>, listen_address: SocketAddr) -> Result<()> {
+        let listener = Arc::new(UdpSocket::bind(listen_address).await?);
         let mut buf = [0u8; 512];
         loop {
-            let (len, user_addr) = match listener.recv_from(&mut buf).await {
+            let (len, user_address) = match listener.recv_from(&mut buf).await {
                 Ok(v) => v,
                 Err(e) => {
                     if e.kind() == std::io::ErrorKind::ConnectionReset {
@@ -149,7 +149,7 @@ impl DnsProxy {
                 });
             }
 
-            let server_addr = listener.clone();
+            let server_address = listener.clone();
             tokio::spawn(async move {
                 while let Some((question, result)) = query_futs.next().await {
                     let domain = question.name().to_utf8();
@@ -161,11 +161,11 @@ impl DnsProxy {
                                 response_msg.set_id(request_id);
                                 response_msg.add_query(question);
                                 let response_bytes = response_msg.to_vec().unwrap();
-                                let server_addr = server_addr.clone();
+                                let server_address = server_address.clone();
                                 trace!("Replying request [{} {:?}]", domain, qtype);
                                 tokio::spawn(async move {
                                     if let Err(e) =
-                                        server_addr.send_to(&response_bytes, user_addr).await
+                                        server_address.send_to(&response_bytes, user_address).await
                                     {
                                         warn!("Unable to reply: {}", e);
                                     }

@@ -28,7 +28,7 @@ impl Connection for UdpConnection {
             let bytes = message.to_vec()?;
 
             let sock = UdpSocket::bind("0.0.0.0:0").await?;
-            sock.send_to(&bytes, self.config.addr()).await?;
+            sock.send_to(&bytes, self.config.address()).await?;
 
             match timeout(self.config.timeout(), sock.recv_from(&mut buf)).await {
                 Ok(Ok((len, _))) => {
