@@ -16,7 +16,12 @@ pub struct Config {
 
 impl Config {
     pub fn from_file(path: &str) -> Result<Self> {
-        let content = fs::read_to_string(path)?;
+        let content = match fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(e) => {
+                anyhow::bail!("Error when reading '{path}': {e}");
+            }
+        };
         let config_yaml: ConfigYaml = serde_yaml::from_str(&content)?;
 
         let listen_addresses = config_yaml

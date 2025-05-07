@@ -290,10 +290,10 @@ impl Connection for TcpConnection {
                 }
             }
         }
-        warn!(
+        anyhow::bail!(
             "TCP query failed after many tries. {} {:?}",
-            self.config_str, dns_query
+            self.config_str,
+            dns_query
         );
-        Err(Error::msg("TCP query failed after retries"))
     }
 }
