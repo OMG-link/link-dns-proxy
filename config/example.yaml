@@ -35,6 +35,14 @@ dns_servers:
       # Optional. If omitted, all domain queries ("*") are forwarded to this DNS server.
       - "www.example.com"
       - "*.example.org"
+      # Filters can also be loaded from an external file. The path can be relative or absolute.
+      # If the path starts with '@', the program will attempt to load filters from the specified file.
+      # The file should contain one filter per line.
+      # Filters written in a file should not contain '@' as loading files recursively is not allowed.
+      # Example:
+      #   @config/example-filters.txt
+      #   @/path/to/this/program/config/example-filters.txt
+      - "@config/example-filters.txt"
 
     timeout: 2000
     # Request timeout in milliseconds.
@@ -63,6 +71,7 @@ dns_servers:
       # Optional. Default: "*"
       - "www.example.com"
       - "*.example.org"
+      - "@config/example-filters.txt"
 
     timeout: 2000
     # Request timeout in milliseconds.
@@ -103,6 +112,7 @@ dns_servers:
       # Optional. Default: "*"
       - "www.example.com"
       - "*.example.org"
+      - "@config/example-filters.txt"
 
     timeout: 2000
     # Request timeout in milliseconds.
@@ -147,6 +157,7 @@ dns_servers:
       # Optional. Default: "*"
       - "www.example.com"
       - "*.example.org"
+      - "@config/example-filters.txt"
 
     timeout: 2000
     # Request timeout in milliseconds.

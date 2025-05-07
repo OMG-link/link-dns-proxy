@@ -2,7 +2,10 @@ use anyhow::Result;
 use reqwest::dns::Name as ReqwestName;
 use serde::Deserialize;
 use std::fmt;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::net::SocketAddr;
+use std::path::Path;
 use std::str::FromStr;
 use std::time::Duration;
 use tracing::warn;
@@ -131,8 +134,9 @@ impl Config {
                     cfg.set_proxy_http(pa);
                 }
                 ProxyType::Socks5 => {
-                    let pa = proxy_address
-                        .ok_or_else(|| anyhow::anyhow!("proxy_address required for SOCKS5 proxy"))?;
+                    let pa = proxy_address.ok_or_else(|| {
+                        anyhow::anyhow!("proxy_address required for SOCKS5 proxy")
+                    })?;
                     cfg.set_proxy_socks5(pa);
                 }
             }
@@ -148,31 +152,13 @@ impl Config {
             cfg.set_reuse_tcp_connection(flag);
         }
         if let Some(filters) = filters {
-            let cleaned: Vec<String> = filters
-                .into_iter()
-                .filter_map(|f| {
-                    if f.is_empty() {
-                        warn!("Skipping empty filter");
-                        return None;
-                    }
-                    let encoded = match TrustName::from_utf8(&f) {
-                        Ok(name) => name.to_ascii(),
-                        Err(e) => {
-                            warn!("Skipping '{}': invalid domain ({})", f, e);
-                            return None;
-                        }
-                    };
-                    if encoded.len() > 1 && encoded[1..].contains('*') {
-                        warn!(
-                            "Skipping '{}': '*' can only appear at the very beginning",
-                            f
-                        );
-                        return None;
-                    }
-                    Some(encoded)
-                })
-                .collect();
-            cfg.set_filters(cleaned);
+            cfg.set_filters(
+                filters
+                    .into_iter()
+                    .flat_map(expand_filter)
+                    .filter_map(format_filter_rule)
+                    .collect(),
+            );
         }
 
         Ok(cfg)
@@ -301,4 +287,45 @@ impl fmt::Display for Config {
         }
         writeln!(f, "}}")
     }
+}
+
+fn expand_filter(f: String) -> Vec<String> {
+    if let Some(path_str) = f.strip_prefix('@') {
+        let path = Path::new(path_str);
+        match File::open(path) {
+            Ok(fh) => BufReader::new(fh)
+                .lines()
+                .filter_map(|line| line.ok())
+                .filter(|l| !l.trim().is_empty())
+                .collect::<Vec<String>>(),
+            Err(e) => {
+                warn!("Could not open filter file '{path_str}': {e}");
+                vec![]
+            }
+        }
+    } else {
+        vec![f]
+    }
+}
+
+fn format_filter_rule(f: String) -> Option<String> {
+    if f.is_empty() {
+        warn!("Skipping invalid filter: empty string");
+        return None;
+    }
+    let encoded = match TrustName::from_utf8(&f) {
+        Ok(name) => name.to_ascii(),
+        Err(e) => {
+            warn!("Skipping invalid filter '{}': invalid domain ({})", f, e);
+            return None;
+        }
+    };
+    if encoded.len() > 1 && encoded[1..].contains('*') {
+        warn!(
+            "Skipping invalid filter '{}': '*' can only appear at the very beginning",
+            f
+        );
+        return None;
+    }
+    Some(encoded)
 }
